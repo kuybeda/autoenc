@@ -7,21 +7,10 @@ from torch.autograd import Variable
 
 from math import sqrt
 
-from src import utils
-from src import config
+import utils
+import config
 
 args   = config.get_config()
-
-def init_linear(linear):
-    init.xavier_normal(linear.weight)
-    linear.bias.data.zero_()
-
-
-def init_conv(conv, glu=True):
-    init.kaiming_normal(conv.weight)
-    if conv.bias is not None:
-        conv.bias.data.zero_()
-
 
 class SpectralNorm:
     def __init__(self, name):
@@ -187,18 +176,15 @@ class ConvBlock(nn.Module):
 
     def forward(self, input):
         out = self.conv(input)
-
         return out
 
 gen_spectral_norm = False
 
 class Generator(nn.Module):
-    def __init__(self, nz, n_label=10): #TODO remove code_dim arg (unused)
+    def __init__(self, nz): #, n_label=10): #TODO remove code_dim arg (unused)
         super().__init__()
 
-        self.label_embed = nn.Embedding(n_label, n_label)
         self.code_norm = PixelNorm()
-        self.label_embed.weight.data.normal_()
         self.progression = nn.ModuleList([ConvBlock(nz, nz, 4, 3, 3, 1, spectral_norm=gen_spectral_norm),
                                           ConvBlock(nz, nz, 3, 1, spectral_norm=gen_spectral_norm),
                                           ConvBlock(nz, nz, 3, 1, spectral_norm=gen_spectral_norm),
@@ -209,29 +195,23 @@ class Generator(nn.Module):
                                           ConvBlock(int(nz/8), int(nz/16), 3, 1, spectral_norm=gen_spectral_norm),
                                           ConvBlock(int(nz/16), int(nz/32), 3, 1, spectral_norm=gen_spectral_norm)])
 
-        self.to_rgb = nn.ModuleList([nn.Conv2d(nz, 3, 1), #Each has 3 out channels and kernel size 1x1!
-                                     nn.Conv2d(nz, 3, 1),
-                                     nn.Conv2d(nz, 3, 1),
-                                     nn.Conv2d(nz, 3, 1),
-                                     nn.Conv2d(int(nz/2), 3, 1),
-                                     nn.Conv2d(int(nz/4), 3, 1),
-                                     nn.Conv2d(int(nz/8), 3, 1),
-                                     nn.Conv2d(int(nz/16), 3, 1),
-                                     nn.Conv2d(int(nz/32), 3, 1)])
+        self.to_gray = nn.ModuleList([nn.Conv2d(nz, 1, 1), #Each has 3 out channels and kernel size 1x1!
+                                     nn.Conv2d(nz, 1, 1),
+                                     nn.Conv2d(nz, 1, 1),
+                                     nn.Conv2d(nz, 1, 1),
+                                     nn.Conv2d(int(nz/2), 1, 1),
+                                     nn.Conv2d(int(nz/4), 1, 1),
+                                     nn.Conv2d(int(nz/8), 1, 1),
+                                     nn.Conv2d(int(nz/16), 1, 1),
+                                     nn.Conv2d(int(nz/32), 1, 1)])
+
 
     def forward(self, input, label, step=0, alpha=-1):
-#        import ipdb
-#        ipdb.set_trace()
-        
-        #input = self.code_norm(input)
-        # ARI: THis causes internal assertion failure. Maybe we don't need the embedding?
-        #label = self.label_embed(label)        
-        
         out_act = lambda x: x #nn.Tanh()
 
         out = torch.cat([input, label], 1).unsqueeze(2).unsqueeze(3)
 
-        for i, (conv, to_rgb) in enumerate(zip(self.progression, self.to_rgb)):
+        for i, (conv, to_rgb) in enumerate(zip(self.progression, self.to_gray)):
             if i > 0 and step > 0:
                 upsample = F.upsample(out, scale_factor=2)
                 out = conv(upsample)
@@ -243,7 +223,7 @@ class Generator(nn.Module):
                 out = out_act(to_rgb(out))
 
                 if i > 0 and 0 <= alpha < 1:
-                    skip_rgb = out_act(self.to_rgb[i - 1](upsample))
+                    skip_rgb = out_act(self.to_gray[i - 1](upsample))
                     out = (1 - alpha) * skip_rgb + alpha * out
 
                 break
@@ -286,15 +266,16 @@ class Discriminator(nn.Module):
                                                     pixel_norm=pixelNormInDiscriminator,
                                                     spectral_norm=spectralNormInDiscriminator)])
 
-        self.from_rgb = nn.ModuleList([nn.Conv2d(3, int(nz/32), 1),
-                                       nn.Conv2d(3, int(nz/16), 1),
-                                       nn.Conv2d(3, int(nz/8), 1),
-                                       nn.Conv2d(3, int(nz/4), 1),
-                                       nn.Conv2d(3, int(nz/2), 1),
-                                       nn.Conv2d(3, nz, 1),
-                                       nn.Conv2d(3, nz, 1),
-                                       nn.Conv2d(3, nz, 1),
-                                       nn.Conv2d(3, nz, 1)])
+        self.from_gray = nn.ModuleList([nn.Conv2d(1, int(nz/32), 1),
+                                       nn.Conv2d(1, int(nz/16), 1),
+                                       nn.Conv2d(1, int(nz/8), 1),
+                                       nn.Conv2d(1, int(nz/4), 1),
+                                       nn.Conv2d(1, int(nz/2), 1),
+                                       nn.Conv2d(1, nz, 1),
+                                       nn.Conv2d(1, nz, 1),
+                                       nn.Conv2d(1, nz, 1),
+                                       nn.Conv2d(1, nz, 1)])
+
 
         self.n_layer = len(self.progression)
 
@@ -306,7 +287,7 @@ class Discriminator(nn.Module):
             index = self.n_layer - i - 1
 
             if i == step:
-                out = self.from_rgb[index](input)
+                out = self.from_gray[index](input)
 
             if i == 0 and use_mean_std_layer:
                 mean_std = input.std(0).mean()
@@ -320,7 +301,7 @@ class Discriminator(nn.Module):
 
                 if i == step and 0 <= alpha < 1:
                     skip_rgb = F.avg_pool2d(input, 2)
-                    skip_rgb = self.from_rgb[index + 1](skip_rgb)
+                    skip_rgb = self.from_gray[index + 1](skip_rgb)
                     out = (1 - alpha) * skip_rgb + alpha * out
         z_out = out.squeeze(2).squeeze(2)
         # print(input.size(), out.size(), step)
@@ -328,7 +309,53 @@ class Discriminator(nn.Module):
             out = self.linear(z_out)
             return out[:, 0], out[:, 1:]
         else:
-            if use_ALQ == 1:
-                print('Reserved for future use')
             out = z_out.view(z_out.size(0), -1) #TODO: Is this needed?
             return utils.normalize(out)
+
+
+############# JUNK #########################
+
+# def init_linear(linear):
+#     init.xavier_normal(linear.weight)
+#     linear.bias.data.zero_()
+#
+#
+# def init_conv(conv, glu=True):
+#     init.kaiming_normal(conv.weight)
+#     if conv.bias is not None:
+#         conv.bias.data.zero_()
+
+            # if use_ALQ == 1:
+            #     print('Reserved for future use')
+
+        # self.label_embed = nn.Embedding(n_label, n_label)
+        # self.label_embed.weight.data.normal_()
+
+
+#        import ipdb
+#        ipdb.set_trace()
+
+# input = self.code_norm(input)
+# ARI: THis causes internal assertion failure. Maybe we don't need the embedding?
+# label = self.label_embed(label)
+
+
+# self.to_rgb = nn.ModuleList([nn.Conv2d(nz, 3, 1), #Each has 3 out channels and kernel size 1x1!
+        #                              nn.Conv2d(nz, 3, 1),
+        #                              nn.Conv2d(nz, 3, 1),
+        #                              nn.Conv2d(nz, 3, 1),
+        #                              nn.Conv2d(int(nz/2), 3, 1),
+        #                              nn.Conv2d(int(nz/4), 3, 1),
+        #                              nn.Conv2d(int(nz/8), 3, 1),
+        #                              nn.Conv2d(int(nz/16), 3, 1),
+        #                              nn.Conv2d(int(nz/32), 3, 1)])
+
+        # self.from_rgb = nn.ModuleList([nn.Conv2d(3, int(nz/32), 1),
+        #                                nn.Conv2d(3, int(nz/16), 1),
+        #                                nn.Conv2d(3, int(nz/8), 1),
+        #                                nn.Conv2d(3, int(nz/4), 1),
+        #                                nn.Conv2d(3, int(nz/2), 1),
+        #                                nn.Conv2d(3, nz, 1),
+        #                                nn.Conv2d(3, nz, 1),
+        #                                nn.Conv2d(3, nz, 1),
+        #                                nn.Conv2d(3, nz, 1)])

@@ -1,13 +1,13 @@
 import numpy as np
-from PIL import Image
+# from PIL import Image
 from tqdm import tqdm
 
-import torch
-from torch import nn, optim
-from torch.autograd import Variable, grad
-from torchvision import utils
+import  torch
+from    torch import nn, optim
+from    torch.autograd import Variable, grad
+from    torchvision import utils
 
-from src.model import Generator, Discriminator
+from model import Generator, Discriminator
 
 from datetime import datetime
 import random
@@ -15,15 +15,15 @@ import copy
 
 import os
 
-from src import config
-from src import utils
-from src import data
+import config
+import utils
+import data
 import evaluate
 
 import torch.backends.cudnn as cudnn
 cudnn.benchmark = True
 
-from torch.nn import functional as F
+# from torch.nn import functional as F
 
 args   = config.get_config()
 writer = None
@@ -61,9 +61,10 @@ class Session:
         self.sample_i = min(args.start_iteration, 0)
         self.phase = args.start_phase
 
-        self.generator = nn.DataParallel( Generator(args.nz+1, args.n_label).cuda() )
-        self.g_running = nn.DataParallel( Generator(args.nz+1, args.n_label).cuda() )
-        self.encoder   = nn.DataParallel( Discriminator(nz = args.nz+1, n_label = args.n_label, binary_predictor = args.train_mode == config.MODE_GAN).cuda() )
+        self.generator = nn.DataParallel( Generator(args.nz+1).cuda() ) #, args.n_label
+        self.g_running = nn.DataParallel( Generator(args.nz+1).cuda() ) # , args.n_label
+        self.encoder   = nn.DataParallel( Discriminator(nz = args.nz+1, n_label = args.n_label,
+                                                        binary_predictor = args.train_mode == config.MODE_GAN).cuda() )
 
         print("Using ", torch.cuda.device_count(), " GPUs!")
 
@@ -138,23 +139,6 @@ class Session:
             self.alpha = args.force_alpha
 
         accumulate(self.g_running, self.generator, 0)
-
-def setup():
-    utils.make_dirs()
-    if not args.testonly:
-        config.log_args(args)
-
-    if args.use_TB:
-        from dateutil import tz
-        from tensorboardX import SummaryWriter
-
-        dt = datetime.now(tz.gettz('Europe/Helsinki')).strftime(r"%y%m%d_%H%M")
-        global writer
-        writer = SummaryWriter("{}/{}/{}".format(args.summary_dir, args.save_dir, dt))
-
-    random.seed(args.manual_seed)
-    torch.manual_seed(args.manual_seed)
-    torch.cuda.manual_seed_all(args.manual_seed)   
 
 def accumulate(model1, model2, decay=0.999):
     par1 = dict(model1.named_parameters())
@@ -241,7 +225,6 @@ class KLN01Loss(torch.nn.Module): #Adapted from https://github.com/DmitryUlyanov
             t1 = (samples_var + samples_mean.pow(2)) / 2
             # In the AGE implementation, this did not have the 0.5 scaling factor:
             t2 = -0.5*samples_var.log()
-
             KL = (t1 + t2 - 0.5).mean()
 
         if not self.minimize:
@@ -252,9 +235,9 @@ class KLN01Loss(torch.nn.Module): #Adapted from https://github.com/DmitryUlyanov
 def train(generator, encoder, g_running, train_data_loader, test_data_loader, session, total_steps, train_mode):
     pbar = tqdm(initial=session.sample_i, total = total_steps)
     
-    benchmarking = False
+    # benchmarking = False
   
-    match_x = args.match_x
+    # match_x = args.match_x
     generatedImagePool = None
 
     refresh_dataset   = True
@@ -292,7 +275,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
                 iteration_levels = int(sample_i_current_stage / args.images_per_stage)
                 session.phase += iteration_levels
                 sample_i_current_stage -= iteration_levels * args.images_per_stage
-                match_x = args.match_x # Reset to non-matching phase
+                # match_x = args.match_x # Reset to non-matching phase
                 print("iteration B alpha={} phase {} will be reduced to 1 and [max]".format(sample_i_current_stage, session.phase))
 
                 refresh_dataset = True
@@ -372,8 +355,6 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
         elif train_mode == config.MODE_CYCLIC:
             e_losses = []
 
-            # e(X)
-            
             real_z = encoder(x, session.phase, session.alpha, args.use_ALQ)
             if args.use_real_x_KL:
                 # KL_real: - \Delta( e(X) , Z ) -> max_e
@@ -382,7 +363,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
 
                 stats['real_mean'] = KL_minimizer.samples_mean.data.mean()
                 stats['real_var'] = KL_minimizer.samples_var.data.mean()
-                stats['KL_real'] = KL_real.data[0]
+                stats['KL_real'] = KL_real.data #[0]
                 kls = "{0:.3f}".format(stats['KL_real'])
 
             # The final entries are the label. Normal case, just 1. Extract it/them, and make it [b x 1]:
@@ -393,7 +374,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
                 # match_x: E_x||g(e(x)) - x|| -> min_e
                 err = utils.mismatch(recon_x, x, args.match_x_metric) * match_x
                 e_losses.append(err)
-                stats['x_reconstruction_error'] = err.data[0]
+                stats['x_reconstruction_error'] = err.data #[0]
 
             args.use_wpgan_grad_penalty = False
             grad_penalty = 0.0
@@ -416,7 +397,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
 
                 stats['fake_mean'] = KL_maximizer.samples_mean.data.mean()
                 stats['fake_var'] = KL_maximizer.samples_var.data.mean()
-                stats['KL_fake'] = -KL_fake.data[0]
+                stats['KL_fake'] = -KL_fake.data#[0]
                 kls = "{0}/{1:.3f}".format(kls, stats['KL_fake'])
 
                 if args.use_wpgan_grad_penalty:
@@ -425,7 +406,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
             # Update e
             if len(e_losses) > 0:
                 e_loss = sum(e_losses)                
-                stats['E_loss'] = np.float32(e_loss.data)
+                stats['E_loss'] = e_loss.data.cpu().numpy()
                 e_loss.backward()
 
                 if args.use_wpgan_grad_penalty:
@@ -433,7 +414,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
                     stats['Grad_penalty'] = grad_penalty.data
 
                 #book-keeping
-                disc_loss_val = e_loss.data[0]
+                # disc_loss_val = e_loss.data[0]
 
         session.optimizerD.step()
 
@@ -467,7 +448,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
 
                     if args.use_loss_KL_z:
                         g_losses.append(kl) # G minimizes this KL
-                        stats['KL(Phi(G))'] = kl.data[0]
+                        stats['KL(Phi(G))'] = kl.data #[0]
                         kls = "{0}/{1:.3f}".format(kls, stats['KL(Phi(G))'])
 
                     if args.use_loss_z_reco:
@@ -477,11 +458,11 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
 
                 if len(g_losses) > 0:
                     loss = sum(g_losses)
-                    stats['G_loss'] = np.float32(loss.data)
+                    stats['G_loss'] = loss.data.cpu().numpy()
                     loss.backward()
 
                     # Book-keeping only:
-                    gen_loss_val = loss.data[0]
+                    # gen_loss_val = loss.data[0]
                 
                 session.optimizerG.step()
 
@@ -489,7 +470,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
 
                 if train_mode == config.MODE_CYCLIC:
                     if args.use_loss_z_reco:
-                        stats['z_reconstruction_error'] = z_diff.data[0]
+                        stats['z_reconstruction_error'] = z_diff.data #[0]
 
             accumulate(g_running, generator)
 
@@ -532,15 +513,31 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
 
         try:
             evaluate.tests_run(g_running, encoder, test_data_loader, session, writer,
-            reconstruction       = (batch_count % 800 == 0),
-            interpolation        = (batch_count % 800 == 0),
-            collated_sampling    = (batch_count % 800 == 0),
-            individual_sampling  = (batch_count % (args.images_per_stage/batch_size(reso)/4) == 0)
-            )
+                                reconstruction       = (batch_count % 100 == 0),
+                                interpolation        = (batch_count % 100 == 0),
+                                collated_sampling    = (batch_count % 100 == 0),
+                                individual_sampling  = (batch_count % 100 == 0) )#(args.images_per_stage/batch_size(reso)/4) == 0)
         except (OSError, StopIteration):
             print("Skipped periodic tests due to an exception.")
 
     pbar.close()
+
+def setup():
+    utils.make_dirs()
+    if not args.testonly:
+        config.log_args(args)
+
+    if args.use_TB:
+        from dateutil import tz
+        from tensorboardX import SummaryWriter
+
+        dt = datetime.now(tz.gettz('US/Pacific')).strftime(r"%y%m%d_%H%M")
+        global writer
+        writer = SummaryWriter("{}/{}/{}".format(args.summary_dir, args.save_dir, dt))
+
+    random.seed(args.manual_seed)
+    torch.manual_seed(args.manual_seed)
+    torch.cuda.manual_seed_all(args.manual_seed)
 
 def main():
     setup()

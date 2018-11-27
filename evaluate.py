@@ -6,9 +6,9 @@ import torch
 from torch.autograd import Variable
 import torchvision.utils
 
-from src import config
-from src import utils
-from src import data
+import config
+import utils
+import data
 
 args = config.get_config()
 
