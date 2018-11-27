@@ -7,7 +7,7 @@ from torch import nn, optim
 from torch.autograd import Variable, grad
 from torchvision import utils
 
-from model import Generator, Discriminator
+from src.model import Generator, Discriminator
 
 from datetime import datetime
 import random
@@ -15,9 +15,9 @@ import copy
 
 import os
 
-import config
-import utils
-import data
+from src import config
+from src import utils
+from src import data
 import evaluate
 
 import torch.backends.cudnn as cudnn

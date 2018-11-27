@@ -2,14 +2,14 @@ import os
 import random
 import h5py
 import numpy as np
-import scipy
+# import scipy
 
 import torch
 from torchvision import datasets, transforms, utils
 from torch.utils.data import DataLoader
 
 
-import config
+from src import config
 
 args = config.get_config()
 
