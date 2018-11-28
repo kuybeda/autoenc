@@ -26,20 +26,20 @@ def parse_args():
     parser.add_argument('--KL', default='qp', help='The KL divergence direction [pq|qp]')
     parser.add_argument('--match_x_metric', default='L1', help='none|L1|L2|cos')
     parser.add_argument('--match_z_metric', default='cos', help='none|L1|L2|cos')
-    parser.add_argument('--noise', default='sphere', help='normal|sphere')
+    parser.add_argument('--noise', default='normal', help='normal|sphere')
     #parser.add_argument('--batch_size', type=int,
     #                default=16, help='batch size')
     parser.add_argument('--no_TB', action='store_true', help='Do not create Tensorboard logs')
     parser.add_argument('--start_iteration', type=int, default=0)
-    parser.add_argument('--use_ALQ', type=int, default=0, help='Reserved for future use')
+    # parser.add_argument('--use_ALQ', type=int, default=0, help='Reserved for future use')
 
-    parser.add_argument('--summary_dir', default='log/pine/runs', help='Tensorflow summaries directory')
-    parser.add_argument('--save_dir', default='tests', help='folder to output images')
+    parser.add_argument('--summary_dir', default='/data/autoencoder/log/pine/runs', help='Tensorflow summaries directory')
+    parser.add_argument('--save_dir', default='/data/autoencoder/tests', help='folder to output images')
 
     ################################################################
     parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--images_per_stage', type=int, default=2e6)
-    parser.add_argument('--checkpoint_cycle', type=int, default=1000)
+    parser.add_argument('--images_per_stage', type=int, default=1e6)
+    parser.add_argument('--checkpoint_cycle', type=int, default=100)
     #################################################################
 
     parser.add_argument('--matching_phase_x', type=float, default=1.5)
@@ -56,8 +56,9 @@ def parse_args():
     parser.add_argument('--dump_trainingset_N', type=int, default=0)
     parser.add_argument('--dump_trainingset_dir', type=str, default='.')
     parser.add_argument('--interpolate_N', type=int, default=0, help='Carry out the given number of interpolation runs (between 4 input images)')
-    parser.add_argument('--reconstructions_N', type=int, default=0, help='The number of reconstructions to run')
-    parser.add_argument('--sample_N', type=int, default=128, help='The number of random samples to run')
+
+    parser.add_argument('--test_rows', type=int, default=5,  help='The number of rows to show')
+    parser.add_argument('--test_cols', type=int, default=20, help='The number of columns to show')
 
     return parser.parse_args()
 
@@ -85,9 +86,9 @@ def init():
 
     assert(args.step_offset != 0 or args.phase_offset == 0)
 
-    args.n_label = 1
+    # args.n_label = 1
     # number of features
-    args.nz = 512 - args.n_label
+    args.nz = 512 # - args.n_label
     args.n_critic = 1
     args.n_generator = 2
     # number of input image channels
@@ -118,9 +119,6 @@ def init():
 
     args.train_mode = MODE_CYCLIC
 
-    # if args.images_per_stage == -1:
-    #     args.images_per_stage = 1e5 #2400e3 if args.data != 'celebaHQ' else 4800e3
-
     if args.max_phase == -1:
         args.max_phase = 5
 
@@ -147,7 +145,17 @@ def get_config():
     return args
 
 
-############ JUNK ############        # if args.data == 'celebaHQ':
+############ JUNK ############
+#
+# if args.data == 'celebaHQ':
+
+    # if args.images_per_stage == -1:
+    #     args.images_per_stage = 1e5 #2400e3 if args.data != 'celebaHQ' else 4800e3
+
+
+    # parser.add_argument('--reconstructions_N', type=int, default=128, help='The number of reconstructions to run')
+    # parser.add_argument('--sample_N', type=int, default=128, help='The number of random samples to run')
+
         #     args.max_phase = 6
         # elif args.data != 'cifar10':
         #     args.max_phase = 5

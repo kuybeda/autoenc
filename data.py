@@ -1,14 +1,12 @@
-import os
-import random
-# import h5py
-import numpy as np
-# import scipy
-
+import  os
+# import random
+# import  numpy as np
+from    PIL import Image
 import  torch
 from    torchvision import datasets, transforms, utils
 from    torch.utils.data import DataLoader
 import  mrcfile
-
+from    myplotlib import show_planes,imshow,clf
 import config
 
 args = config.get_config()
@@ -21,12 +19,12 @@ def get_loader(datasetName, path):
     def loader(transform, batch_size):
         data = datasets.DatasetFolder(path, loader=mrc_loader, extensions=['.mrc'], transform=transform)
         data_loader = DataLoader(data, shuffle=True, batch_size=batch_size,
-                                 num_workers=4, drop_last=True, pin_memory=(args.gpu_count>1))
+                                 num_workers=0, drop_last=True, pin_memory=(args.gpu_count>1))
         return data_loader
     return loader
 
 class Utils:
-    maybeRandomHorizontalFlip = transforms.RandomHorizontalFlip() if args.sample_mirroring else transforms.Lambda(lambda x: x)
+    # maybeRandomHorizontalFlip = transforms.RandomHorizontalFlip() if args.sample_mirroring else transforms.Lambda(lambda x: x)
     #TODO Triple-check that image_size can be given this way instead of always calculated from session.step
     @staticmethod
     def sample_data2(dataloader, batch_size, image_size, session):
@@ -34,11 +32,14 @@ class Utils:
             transforms.ToPILImage(),
             transforms.Resize(image_size),
             transforms.ToTensor(),
-            # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
+
         transform_prev = transforms.Compose([
             transforms.ToPILImage(),
+            # Downsample
             transforms.Resize(int(image_size/2)),
+            # Upsample with linear interpolation
+            transforms.Resize(image_size,interpolation=Image.NEAREST),
             transforms.ToTensor(),
         ])
 
@@ -49,12 +50,12 @@ class Utils:
             if not fade:
                 yield img, label
             else:
-                low_resol_batch_x = np.array([transform_prev(img[i]).numpy() for i in range(img.size(0))], dtype=np.float32).repeat(2, axis=2).repeat(2, axis=3)
-
-                mixed_img = img * session.alpha + ((1.0-session.alpha)*torch.from_numpy(low_resol_batch_x))
-                #mixed_img = np.array([transform_with_normalize(mixed_img[i]).numpy() for i in range(img.size(0))], dtype=np.float32)
+                img_prev  = torch.stack([transform_prev(im) for im in img])
+                mixed_img = img * session.alpha + (1.0-session.alpha)*img_prev
 
                 yield mixed_img, label
+
+        print("Finished epoch !! ")
 
 
 def dump_training_set(loader, dump_trainingset_N, dump_trainingset_dir, session):
@@ -83,6 +84,11 @@ def dump_training_set(loader, dump_trainingset_N, dump_trainingset_dir, session)
 
 
 ######## JUNK #########
+
+        # mrc = mrcfile.open(fname)
+        # im = mrc.data
+        # mrc.close()
+
 
     # @staticmethod
     # def sample_data(dataloader, batch_size, image_size=4):
