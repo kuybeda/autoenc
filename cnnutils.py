@@ -93,8 +93,7 @@ class PixelNorm(nn.Module):
         super().__init__()
 
     def forward(self, input):
-        return input / torch.sqrt(torch.mean(input ** 2, dim=1, keepdim=True)
-                                  + 1e-8)
+        return input / torch.sqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
 
 
 class SpectralNormConv2d(nn.Module):

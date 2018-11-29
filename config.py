@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument('--step_offset', type=int, default=0, help='Use the reloaded model but ignore the given number of steps (use -1 for all steps)')
 
     parser.add_argument('-d', '--data', default='mrc', type=str,
-                        choices=['celeba', 'lsun', 'cifar10', 'celebaHQ'],
+                        choices=['celeba', 'lsun', 'cifar10', 'celebaHQ', 'mrc'],
                         help=('Specify dataset. '
                             'Currently celeba, lsun and cifar10 are supported'))
     parser.add_argument('--KL', default='qp', help='The KL divergence direction [pq|qp]')
@@ -37,12 +37,12 @@ def parse_args():
     parser.add_argument('--save_dir', default='/data/autoencoder/tests', help='folder to output images')
 
     ################################################################
-    parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--images_per_stage', type=int, default=1e6)
+    parser.add_argument('--lr', type=float, default=0.005)
+    parser.add_argument('--images_per_stage', type=int, default=1e5)
     parser.add_argument('--checkpoint_cycle', type=int, default=100)
     #################################################################
 
-    parser.add_argument('--matching_phase_x', type=float, default=1.5)
+    # parser.add_argument('--matching_phase_x', type=float, default=1.5)
     parser.add_argument('--force_alpha', type=float, default=-1.0)
     parser.add_argument('--start_phase', type=int, default=0)    
     parser.add_argument('--max_phase', type=int, default=-1, help='The highest progressive growth phase that we train for, e.g. phase 4 means 64x64. If not given, we use dataset-based defaults.')
@@ -86,27 +86,26 @@ def init():
 
     assert(args.step_offset != 0 or args.phase_offset == 0)
 
-    # args.n_label = 1
     # number of features
-    args.nz = 512 # - args.n_label
+    args.nz = 512
     args.n_critic = 1
     args.n_generator = 2
     # number of input image channels
     args.nc = 1
 
     args.use_loss_x_reco    = True
-    args.use_real_x_KL      = True
+    args.use_real_x_KL      = False
 
-    args.use_loss_fake_D_KL = True
+    args.use_loss_fake_D_KL = False
 
-    args.use_loss_z_reco    = True
-    args.use_loss_KL_z      = True
+    args.use_loss_z_reco    = False
+    args.use_loss_KL_z      = False
 
     args.match_x = 1
     args.match_z = 100
-    args.fake_D_KL_scale = 1.0 #0.1
+    args.fake_D_KL_scale = 0.1
     args.fake_G_KL_scale = args.fake_D_KL_scale
-    args.real_x_KL_scale = 1.0 #0.1
+    args.real_x_KL_scale = 0.1
 
     args.use_TB = not args.no_TB
 

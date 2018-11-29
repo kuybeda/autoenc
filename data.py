@@ -1,6 +1,6 @@
 import  os
 # import random
-# import  numpy as np
+import  numpy as np
 from    PIL import Image
 import  torch
 from    torchvision import datasets, transforms, utils
@@ -35,11 +35,11 @@ class Utils:
         ])
 
         transform_prev = transforms.Compose([
-            transforms.ToPILImage(),
+            transforms.ToPILImage(mode='F'),
             # Downsample
-            transforms.Resize(int(image_size/2)),
+            transforms.Resize(image_size//2),
             # Upsample with linear interpolation
-            transforms.Resize(image_size,interpolation=Image.NEAREST),
+            transforms.Resize(image_size,interpolation=Image.LINEAR),
             transforms.ToTensor(),
         ])
 
@@ -50,7 +50,8 @@ class Utils:
             if not fade:
                 yield img, label
             else:
-                img_prev  = torch.stack([transform_prev(im) for im in img])
+                # mixed_img = img * session.alpha + ((1.0 - session.alpha) * torch.from_numpy(img_prev))
+                img_prev  = torch.stack([transform_prev(im[0][...,None].numpy()) for im in img])
                 mixed_img = img * session.alpha + (1.0-session.alpha)*img_prev
 
                 yield mixed_img, label

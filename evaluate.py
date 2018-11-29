@@ -29,6 +29,8 @@ class Utils:
 
         # obtain samples
         myz      = Variable(torch.randn(nsamples, args.nz)).cuda()
+        myz      = utils.normalize(myz)
+
         # myz, input_class = utils.split_labels_out_of_latent(myz)
 
         ims      = generator(myz, session.phase, session.alpha).detach() #.cpu().numpy()
@@ -73,7 +75,7 @@ class Utils:
         save_path   = '{}/{}.png'.format(sample_dir, str(global_i + 1).zfill(6))
         mkdir_assure(sample_dir)
 
-        torchvision.utils.save_image(out_ims, save_path, nrow=args.test_cols, normalize=True, range=(-1, 1), padding=0)
+        torchvision.utils.save_image(out_ims, save_path, nrow=args.test_cols, normalize=True, padding=0, scale_each=False)
 
         encoder.train()
         generator.train()

@@ -1,7 +1,7 @@
 # import  torch
 from    torch import nn
 from    torch.nn import functional as F
-# import utils
+import  utils
 import  config
 from    cnnutils import SpectralNormConv2d, EqualConv2d, PixelNorm
 
@@ -9,9 +9,9 @@ args   = config.get_config()
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size,
-                 padding,
-                 kernel_size2=None, padding2=None,
+                 padding, kernel_size2=None, padding2=None,
                  pixel_norm=True, spectral_norm=False):
+
         super().__init__()
 
         pad1 = padding
@@ -25,39 +25,33 @@ class ConvBlock(nn.Module):
             kernel2 = kernel_size2
 
         if spectral_norm:
-            self.conv = nn.Sequential(SpectralNormConv2d(in_channel,
-                                                         out_channel, kernel1,
-                                                         padding=pad1),
-                                      # nn.LeakyReLU(0.2),
-                                      nn.PReLU(),
-                                      SpectralNormConv2d(out_channel,
-                                                         out_channel, kernel2,
-                                                         padding=pad2),
-                                      nn.PReLU())
-                                      # nn.LeakyReLU(0.2))
+            # assert(0)
+            self.conv = nn.Sequential(SpectralNormConv2d(in_channel, out_channel, kernel1, padding=pad1),
+                                      nn.LeakyReLU(0.2),
+                                      # nn.PReLU(),
+                                      SpectralNormConv2d(out_channel, out_channel, kernel2, padding=pad2),
+                                      # nn.PReLU())
+                                      nn.LeakyReLU(0.2))
 
         else:
             if pixel_norm:
-                self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel,
-                                                      kernel1, padding=pad1),
+                # assert(0)
+                self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
                                           PixelNorm(),
-                                          nn.PReLU(),
-                                          # nn.LeakyReLU(0.2),
-                                          EqualConv2d(out_channel, out_channel,
-                                                      kernel2, padding=pad2),
+                                          # nn.PReLU(),
+                                          nn.LeakyReLU(0.2),
+                                          EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
                                           PixelNorm(),
-                                          nn.PReLU())
-                                          # nn.LeakyReLU(0.2))
+                                          # nn.PReLU())
+                                          nn.LeakyReLU(0.2))
 
             else:
-                self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel,
-                                                      kernel1, padding=pad1),
-                                          nn.PReLU(),
-                                          # nn.LeakyReLU(0.2),
-                                          EqualConv2d(out_channel, out_channel,
-                                                      kernel2, padding=pad2),
-                                          # nn.LeakyReLU(0.2))
-                                          nn.PReLU())
+                self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
+                                          # nn.PReLU(),
+                                          nn.LeakyReLU(0.2),
+                                          EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
+                                          nn.LeakyReLU(0.2))
+                                          # nn.PReLU())
 
     def forward(self, input):
         out = self.conv(input)
@@ -115,13 +109,13 @@ class Generator(nn.Module):
 
         return out
 
-pixelNormInDiscriminator    = False
-spectralNormInDiscriminator = True
+pixelNormInDiscriminator = False
 
 class Discriminator(nn.Module):
     def __init__(self, nz):
         super().__init__()
         # self.binary_predictor = binary_predictor
+        spectralNormInDiscriminator = True
         self.progression = nn.ModuleList([ConvBlock(int(nz/32), int(nz/16), 3, 1,
                                                     pixel_norm=pixelNormInDiscriminator,
                                                     spectral_norm=spectralNormInDiscriminator),
@@ -183,7 +177,8 @@ class Discriminator(nn.Module):
 
         z_out = out.squeeze(2).squeeze(2)
         # out = z_out.view(z_out.size(0), -1) #TODO: Is this needed?
-        return z_out #utils.normalize(out)
+        # return z_out
+        return utils.normalize(z_out)
 
 
 ############# JUNK #########################

@@ -181,12 +181,12 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
         reso = 4 * 2 ** session.phase
 
         # If we can switch from fade-training to stable-training
-        if sample_i_current_stage >= args.images_per_stage/2:
-            if session.alpha < 1.0:
-                refresh_dataset = True # refresh dataset generator since no longer have to fade
-            match_x = args.match_x * args.matching_phase_x
-        else:
-            match_x = args.match_x
+        if sample_i_current_stage >= args.images_per_stage: #/2:
+            # if session.alpha < 1.0:
+            refresh_dataset = True # refresh dataset generator since no longer have to fade
+        #     match_x = args.match_x * args.matching_phase_x
+        # else:
+        match_x = args.match_x
 
         session.alpha = min(1, sample_i_current_stage * 2.0 / args.images_per_stage) # For 100k, it was 0.00002 = 2.0 / args.images_per_stage
 
@@ -226,14 +226,14 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
         x = Variable(real_image).cuda(async=(args.gpu_count>1))
         kls = ""
         if train_mode == config.MODE_GAN:
-            
+
             # Discriminator for real samples
             real_predict, _ = encoder(x, session.phase, session.alpha)
             real_predict    = real_predict.mean() - 0.001 * (real_predict ** 2).mean()
             real_predict.backward(-one) # Towards 1
 
             # (1) Generator => D. Identical to (2) see below
-            
+
             fake_predict, fake_image = D_prediction_of_G_output(generator, encoder, session.phase, session.alpha)
             fake_predict.backward(one)
 
@@ -364,7 +364,7 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
 
             accumulate(g_running, generator)
 
-            del z, x, one, real_image, real_z, KL_real, recon_x, fake, egz, KL_fake, kl, z_diff
+            # del z, x, one, real_image, real_z, KL_real, recon_x, fake, egz, KL_fake, kl, z_diff
 
             if train_mode == config.MODE_CYCLIC:
                 if args.use_TB:
@@ -379,11 +379,20 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
         ########################  Statistics ######################## 
 
         b = batch_size_by_phase(session.phase)
-        zr, xr = (stats['z_reconstruction_error'], stats['x_reconstruction_error']) if train_mode == config.MODE_CYCLIC else (0.0, 0.0)
+
+        xr = stats['x_reconstruction_error'] if train_mode == config.MODE_CYCLIC else 0.0
         e = (session.sample_i / float(epoch_len))
         pbar.set_description(
-            ('{0}; it: {1}; phase: {2}; b: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; KL(real/fake/fakeG): {7}; z-reco: {8:.2f}; x-reco {9:.3f}; real_var {10:.4f}').format(batch_count+1, session.sample_i+1, session.phase, b, session.alpha, reso, e, kls, zr, xr, stats['real_var'])
+            ('{0}; it: {1}; phase: {2}; b: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; KL(real/fake/fakeG): {7}; x-reco {8:.3f};').format(\
+                batch_count+1, session.sample_i+1, session.phase, b, session.alpha, reso, e, kls, xr)
             )
+
+        # zr, xr = (stats['z_reconstruction_error'], stats['x_reconstruction_error']) if train_mode == config.MODE_CYCLIC else (0.0, 0.0)
+        # e = (session.sample_i / float(epoch_len))
+        # pbar.set_description(
+        #     ('{0}; it: {1}; phase: {2}; b: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; KL(real/fake/fakeG): {7}; z-reco: {8:.2f}; x-reco {9:.3f}; real_var {10:.4f}').format(\
+        #         batch_count+1, session.sample_i+1, session.phase, b, session.alpha, reso, e, kls, zr, xr, stats['real_var'])
+        #     )
 
         pbar.update(batch_size(reso))
         session.sample_i += batch_size(reso) # if not benchmarking else 100
