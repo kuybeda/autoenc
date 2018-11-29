@@ -11,12 +11,12 @@ from    myplotlib import show_planes,imshow,clf
 
 args = config.get_config()
 
-def tests_run(generator, encoder, test_data_loader, session, reconstruction=True, sampling=True):
+def tests_run(generator, encoder, test_data_loader, session, reconstruction=True):
     if reconstruction:
         Utils.reconstruct_images(generator, encoder, test_data_loader, session.sample_i, session)
 
-    if sampling:
-        Utils.generate_random_samples(generator, session.sample_i, session)
+    # if sampling:
+    #     Utils.generate_random_samples(generator, session.sample_i, session)
 
 class Utils:
     @staticmethod
@@ -29,7 +29,7 @@ class Utils:
 
         # obtain samples
         myz      = Variable(torch.randn(nsamples, args.nz)).cuda()
-        myz      = utils.normalize(myz)
+        # myz      = utils.normalize(myz)
 
         # myz, input_class = utils.split_labels_out_of_latent(myz)
 

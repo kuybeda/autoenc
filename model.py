@@ -10,7 +10,7 @@ args   = config.get_config()
 class ConvBlock(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size,
                  padding, kernel_size2=None, padding2=None,
-                 pixel_norm=True, spectral_norm=False):
+                 pixel_norm=False, spectral_norm=False):
 
         super().__init__()
 
@@ -35,7 +35,7 @@ class ConvBlock(nn.Module):
 
         else:
             if pixel_norm:
-                # assert(0)
+                assert(0)
                 self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
                                           PixelNorm(),
                                           # nn.PReLU(),
@@ -86,9 +86,8 @@ class Generator(nn.Module):
 
 
     def forward(self, input, step=0, alpha=-1):
-        # out_act = lambda x: x #nn.Tanh()
-        # out = torch.cat([input, label], 1).unsqueeze(2).unsqueeze(3)
-        out = input[...,None,None]
+
+        out = input #[...,None,None]
 
         for i, (conv, to_gray) in enumerate(zip(self.progression, self.to_gray)):
 
@@ -157,7 +156,6 @@ class Discriminator(nn.Module):
 
         self.n_layer = len(self.progression)
 
-    # c = 0
     def forward(self, input, step, alpha): #default was step=0, alpha=-1
         for i in range(step, -1, -1):
             index = self.n_layer - i - 1
@@ -177,8 +175,8 @@ class Discriminator(nn.Module):
 
         z_out = out.squeeze(2).squeeze(2)
         # out = z_out.view(z_out.size(0), -1) #TODO: Is this needed?
-        # return z_out
-        return utils.normalize(z_out)
+        return z_out
+        # return utils.normalize(z_out)
 
 
 ############# JUNK #########################

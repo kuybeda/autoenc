@@ -37,7 +37,7 @@ class Session:
         print('Session created.')
 
     def cur_res(self):
-        return  4 * 2 ** self.phase
+        return  8 * 2 ** self.phase
 
     def reset_opt(self):
         self.optimizerG = optim.Adam(self.generator.parameters(), args.lr, betas=(0.0, 0.99))

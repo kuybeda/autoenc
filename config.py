@@ -37,8 +37,8 @@ def parse_args():
     parser.add_argument('--save_dir', default='/data/autoencoder/tests', help='folder to output images')
 
     ################################################################
-    parser.add_argument('--lr', type=float, default=0.005)
-    parser.add_argument('--images_per_stage', type=int, default=1e5)
+    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--images_per_stage', type=int, default=1e6)
     parser.add_argument('--checkpoint_cycle', type=int, default=100)
     #################################################################
 

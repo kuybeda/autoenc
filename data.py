@@ -34,22 +34,22 @@ class Utils:
             transforms.ToTensor(),
         ])
 
-        transform_prev = transforms.Compose([
-            transforms.ToPILImage(mode='F'),
-            # Downsample
-            transforms.Resize(image_size//2),
-            # Upsample with linear interpolation
-            transforms.Resize(image_size,interpolation=Image.LINEAR),
-            transforms.ToTensor(),
-        ])
-
         fade = session.phase > 0 and session.alpha < 1.0
 
         loader = dataloader(transform, batch_size=batch_size)
         for img, label in loader:
-            if not fade:
+            if True: #not fade:
                 yield img, label
             else:
+                transform_prev = transforms.Compose([
+                    transforms.ToPILImage(mode='F'),
+                    # Downsample
+                    transforms.Resize(image_size // 2),
+                    # Upsample with linear interpolation
+                    transforms.Resize(image_size, interpolation=Image.LINEAR),
+                    transforms.ToTensor(),
+                ])
+
                 # mixed_img = img * session.alpha + ((1.0 - session.alpha) * torch.from_numpy(img_prev))
                 img_prev  = torch.stack([transform_prev(im[0][...,None].numpy()) for im in img])
                 mixed_img = img * session.alpha + (1.0-session.alpha)*img_prev
