@@ -24,113 +24,10 @@ cudnn.benchmark = True
 args   = config.get_config()
 writer = None
 
-def batch_size(reso):
-    if args.gpu_count == 1:
-        save_memory = False
-        if not save_memory:
-            batch_table = {4:128, 8:128, 16:128, 32:64, 64:32, 128:16, 256:8, 512:4, 1024:1}
-        else:
-            batch_table = {4:128, 8:128, 16:128, 32:32, 64:16, 128:4, 256:2, 512:2, 1024:1}
-    elif args.gpu_count == 2:
-        batch_table = {4:256, 8:256, 16:256, 32:128, 64:64, 128:32, 256:16, 512:8, 1024:2}
-    elif args.gpu_count == 4:
-        batch_table = {4:512, 8:256, 16:128, 32:64, 64:32, 128:32, 256:32, 512:16, 1024:4}
-    elif args.gpu_count == 8:
-        batch_table = {4:512, 8:512, 16:512, 32:256, 64:256, 128:128, 256:64, 512:32, 1024:8}
-    else:
-        assert(False)
-    
-    return batch_table[reso]
-
-def batch_size_by_phase(phase):
-    return batch_size(4 * 2 ** phase)
-
-def get_grad_penalty(discriminator, real_image, fake_image, step, alpha):
-    """ Used in WGAN-GP version only. """
-    eps = torch.rand(batch_size_by_phase(step), 1, 1, 1).cuda()
-
-    if eps.size(0) != real_image.size(0) or eps.size(0) != fake_image.size(0):
-        # If end-of-batch situation, we restrict other vectors to matcht the number of training images available.
-        eps = eps[:real_image.size(0)]
-        fake_image = fake_image[:real_image.size(0)]
-
-    x_hat = eps * real_image.data + (1 - eps) * fake_image.data
-    x_hat = Variable(x_hat, requires_grad=True)
-
-    if args.train_mode == config.MODE_GAN: # Regular GAN mode
-        hat_predict, _ = discriminator(x_hat, step, alpha)
-        grad_x_hat = grad(
-            outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
-    else:
-        hat_z = discriminator(x_hat, step, alpha)
-        # KL_fake: \Delta( e(g(Z)) , Z ) -> max_e
-        KL_maximizer = KLN01Loss(direction=args.KL, minimize=False)
-        KL_fake = KL_maximizer(hat_z) * args.fake_D_KL_scale
-        grad_x_hat = grad(
-            outputs=KL_fake.sum(), inputs=x_hat, create_graph=True)[0]
-
-    # Push the gradients of the interpolated samples towards 1
-    grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1)
-                        .norm(2, dim=1) - 1)**2).mean()
-    grad_penalty = 10 * grad_penalty
-    return grad_penalty
-
-def D_prediction_of_G_output(generator, encoder, step, alpha):
-    myz = Variable(torch.randn(batch_size_by_phase(step), args.nz)).cuda(async=(args.gpu_count>1))
-    myz = utils.normalize(myz)
-    # myz, label = utils.split_labels_out_of_latent(myz)
-
-    fake_image = generator(myz, step, alpha)
-    fake_predict, _ = encoder(fake_image, step, alpha)
-
-    loss = fake_predict.mean()
-    return loss, fake_image
-
-class KLN01Loss(torch.nn.Module): #Adapted from https://github.com/DmitryUlyanov/AGE
-
-    def __init__(self, direction, minimize):
-        super(KLN01Loss, self).__init__()
-        self.minimize = minimize
-        assert direction in ['pq', 'qp'], 'direction?'
-
-        self.direction = direction
-
-    def forward(self, samples):
-
-        assert samples.nelement() == samples.size(1) * samples.size(0), '?'
-
-        samples = samples.view(samples.size(0), -1)
-
-        self.samples_var = utils.var(samples)
-        self.samples_mean = samples.mean(0)
-
-        samples_mean = self.samples_mean
-        samples_var = self.samples_var
-
-        if self.direction == 'pq':
-            t1 = (1 + samples_mean.pow(2)) / (2 * samples_var.pow(2))
-            t2 = samples_var.log()
-
-            KL = (t1 + t2 - 0.5).mean()
-        else:
-            # In the AGE implementation, there is samples_var^2 instead of samples_var^1
-            t1 = (samples_var + samples_mean.pow(2)) / 2
-            # In the AGE implementation, this did not have the 0.5 scaling factor:
-            t2 = -0.5*samples_var.log()
-            KL = (t1 + t2 - 0.5).mean()
-
-        if not self.minimize:
-            KL *= -1
-
-        return KL
-
 def train(generator, encoder, g_running, train_data_loader, test_data_loader, session, total_steps, train_mode):
     pbar = tqdm(initial=session.sample_i, total = total_steps)
-    
-    generatedImagePool = None
 
     refresh_dataset   = True
-    refresh_imagePool = True
 
     # After the Loading stage, we cycle through successive Fade-in and Stabilization stages
 
@@ -164,11 +61,9 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
                 iteration_levels = int(sample_i_current_stage / args.images_per_stage)
                 session.phase += iteration_levels
                 sample_i_current_stage -= iteration_levels * args.images_per_stage
-                # match_x = args.match_x # Reset to non-matching phase
                 print("iteration B alpha={} phase {} will be reduced to 1 and [max]".format(sample_i_current_stage, session.phase))
 
                 refresh_dataset     = True
-                refresh_imagePool   = True # Reset the pool to avoid images of 2 different resolutions in the pool
 
                 if reset_optimizers_on_phase_start:
                     utils.requires_grad(generator)
@@ -178,8 +73,8 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
                     session.reset_opt()
                     print("Optimizers have been reset.")                
 
-        reso = session.cur_res()
-        # reso = 4 * 2 ** session.phase
+        reso    = session.cur_res()
+        batch   = session.cur_batch()
 
         # If we can switch from fade-training to stable-training
         if sample_i_current_stage >= args.images_per_stage:
@@ -190,130 +85,95 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
         session.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage) # For 100k, it was 0.00002 = 2.0 / args.images_per_stage
 
         if refresh_dataset:
-            train_dataset = data.Utils.sample_data2(train_data_loader, batch_size(reso), reso, session)
+            train_dataset = data.Utils.sample_data2(train_data_loader, batch, reso, session)
             refresh_dataset = False
             print("Refreshed dataset. Alpha={} and iteration={}".format(session.alpha, sample_i_current_stage))
 
         stats = {}
 
-        one = torch.FloatTensor([1]).cuda(async=(args.gpu_count>1))
-
         try:
-            real_image, _ = next(train_dataset)              
+            real_image, _ = next(train_dataset)
         except (OSError, StopIteration):
-            train_dataset = data.Utils.sample_data2(train_data_loader, batch_size(reso), reso, session)
+            train_dataset = data.Utils.sample_data2(train_data_loader, batch, reso, session)
             real_image, _ = next(train_dataset)
 
-        ####################### DISCRIMINATOR / ENCODER ###########################
+        # if (batch_count + 1) % (args.n_critic + 1) == 0:
+        #     utils.switch_grad_updates_to_first_of(generator, encoder)
+        #     generator.zero_grad()
+        # else:
+        #     utils.switch_grad_updates_to_first_of(encoder, generator)
+        #     encoder.zero_grad()
 
-        utils.switch_grad_updates_to_first_of(encoder, generator)
+        # utils.requires_grad(generator)
+        # utils.requires_grad(encoder)
+
+        # utils.switch_grad_updates_to_first_of(encoder, generator)
         encoder.zero_grad()
+        generator.zero_grad()
 
         x = Variable(real_image).cuda(async=(args.gpu_count>1))
-        kls = ""
-        if train_mode == config.MODE_GAN:
+        losses = []
 
-            # Discriminator for real samples
-            real_predict, _ = encoder(x, session.phase, session.alpha)
-            real_predict    = real_predict.mean() - 0.001 * (real_predict ** 2).mean()
-            real_predict.backward(-one) # Towards 1
+        real_z  = encoder(x, session.phase, session.alpha)
+        recon_x = generator(real_z, session.phase, session.alpha)
 
-            # (1) Generator => D. Identical to (2) see below
+        # match_x: E_x||g(e(x)) - x|| -> min_e
+        err = utils.mismatch(recon_x, x, args.match_x_metric) * match_x
+        losses.append(err)
+        stats['x_reconstruction_error'] = err.data
 
-            fake_predict, fake_image = D_prediction_of_G_output(generator, encoder, session.phase, session.alpha)
-            fake_predict.backward(one)
+        # fake_z,fake_cls  = encoder(recon_x, session.phase, session.alpha)
 
-            # Grad penalty
+        loss = sum(losses)
+        stats['G_loss'] = loss.data.cpu().numpy()
+        loss.backward()
 
-            grad_penalty = get_grad_penalty(encoder, x, fake_image, session.phase, session.alpha)
-            grad_penalty.backward()
+        session.optimizerE.step()
+        session.optimizerG.step()
+        accumulate(g_running, generator)
+        # torch.cuda.empty_cache()
 
-        elif train_mode == config.MODE_CYCLIC:
-            e_losses = []
+        # if (batch_count + 1) % (args.n_critic + 1) == 0:
+        #     # Decoder/generator update
+        #     # construct generator loss
+        #     wgan_G_loss =  -fake_cls.mean()
+        #     losses.append(wgan_G_loss)
+        #     loss = sum(losses)
+        #     stats['D_loss'] = loss
+        #     loss.backward()
+        #     session.optimizerG.step()
+        #     # torch.cuda.empty_cache()
+        #     accumulate(g_running, generator)
+        # else:
+        #     # Encoder/discriminator update
+        #     wgan_D_loss = fake_cls.mean()-real_cls.mean()
+        #     losses.append(wgan_D_loss)
+        #     loss = sum(losses)
+        #     stats['E_loss'] = loss.data.cpu().numpy()
+        #     loss.backward()
+        #     session.optimizerE.step()
+        #     # torch.cuda.empty_cache()
 
-            real_z = encoder(x, session.phase, session.alpha)
-            # The final entries are the label. Normal case, just 1. Extract it/them, and make it [b x 1]:
+        # del x, real_image, real_z, recon_x
 
-            # real_z, label = utils.split_labels_out_of_latent(real_z)
-            recon_x = generator(real_z, session.phase, session.alpha)
-            if args.use_loss_x_reco:
-                # match_x: E_x||g(e(x)) - x|| -> min_e
-                err = utils.mismatch(recon_x, x, args.match_x_metric) * match_x
-                e_losses.append(err)
-                stats['x_reconstruction_error'] = err.data #[0]
-
-            args.use_wpgan_grad_penalty = False
-            grad_penalty = 0.0
-
-            # Update e
-            if len(e_losses) > 0:
-                e_loss = sum(e_losses)                
-                stats['E_loss'] = e_loss.data.cpu().numpy()
-                e_loss.backward()
-
-                if args.use_wpgan_grad_penalty:
-                    grad_penalty.backward()
-                    stats['Grad_penalty'] = grad_penalty.data
-
-                #book-keeping
-                # disc_loss_val = e_loss.data[0]
-
-        session.optimizerD.step()
-
-        torch.cuda.empty_cache()
-
-        ######################## GENERATOR / DECODER #############################
-        
-        if (batch_count + 1) % args.n_critic == 0:
-            utils.switch_grad_updates_to_first_of(generator, encoder)
-
-            for _ in range(args.n_generator):
-                generator.zero_grad()
-                g_losses = []
-
-                if len(g_losses) > 0:
-                    loss = sum(g_losses)
-                    stats['G_loss'] = loss.data.cpu().numpy()
-                    loss.backward()
-
-                    # Book-keeping only:
-                    # gen_loss_val = loss.data[0]
-                
-                session.optimizerG.step()
-
-                torch.cuda.empty_cache()
-
-                # if train_mode == config.MODE_CYCLIC:
-                #     if args.use_loss_z_reco:
-                #         stats['z_reconstruction_error'] = z_diff.data #[0]
-
-            accumulate(g_running, generator)
-
-            # del z, x, one, real_image, real_z, KL_real, recon_x, fake, egz, KL_fake, kl, z_diff
-
-            if train_mode == config.MODE_CYCLIC:
-                if args.use_TB:
-                    for key,val in stats.items():                    
-                        writer.add_scalar(key, val, session.sample_i)
-                elif batch_count % 100 == 0:
-                    print(stats)
-
-            if args.use_TB:
-                writer.add_scalar('LOD', session.phase + session.alpha, session.sample_i)
+        if args.use_TB:
+            for key,val in stats.items():
+                writer.add_scalar(key, val, session.sample_i)
+            writer.add_scalar('LOD', session.phase + session.alpha, session.sample_i)
+        elif batch_count % 100 == 0:
+            print(stats)
 
         ########################  Statistics ######################## 
-
-        b = batch_size_by_phase(session.phase)
 
         xr = stats['x_reconstruction_error'] if train_mode == config.MODE_CYCLIC else 0.0
         e = (session.sample_i / float(epoch_len))
         pbar.set_description(
-            ('{0}; it: {1}; phase: {2}; b: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; KL(real/fake/fakeG): {7}; x-reco {8:.3f};').format(\
-                batch_count+1, session.sample_i+1, session.phase, b, session.alpha, reso, e, kls, xr)
+            ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-reco {7:.3f};').format(\
+                batch_count+1, session.sample_i+1, session.phase, batch, session.alpha, reso, e, xr)
             )
 
-        pbar.update(batch_size(reso))
-        session.sample_i += batch_size(reso) # if not benchmarking else 100
+        pbar.update(batch)
+        session.sample_i += batch
         batch_count += 1
 
         ########################  Saving ######################## 
@@ -392,6 +252,72 @@ if __name__ == '__main__':
 
 
 ########## JUNK ########################
+
+# one = torch.FloatTensor([1]).cuda(async=(args.gpu_count>1))
+
+# if train_mode == config.MODE_GAN:
+#
+#     # Discriminator for real samples
+#     real_z,real_predict = encoder(x, session.phase, session.alpha)
+#     real_predict    = real_predict.mean() - 0.001 * (real_predict ** 2).mean()
+#     real_predict.backward(-one) # Towards 1
+#
+#     # (1) Generator => D. Identical to (2) see below
+#
+#     fake_predict, fake_image = D_prediction_of_G_output(generator, encoder, session.phase, session.alpha)
+#     fake_predict.backward(one)
+#
+#     # Grad penalty
+#
+#     grad_penalty = get_grad_penalty(encoder, x, fake_image, session.phase, session.alpha)
+#     grad_penalty.backward()
+#
+# elif train_mode == config.MODE_CYCLIC:
+
+
+# class KLN01Loss(torch.nn.Module): #Adapted from https://github.com/DmitryUlyanov/AGE
+#
+#     def __init__(self, direction, minimize):
+#         super(KLN01Loss, self).__init__()
+#         self.minimize = minimize
+#         assert direction in ['pq', 'qp'], 'direction?'
+#
+#         self.direction = direction
+#
+#     def forward(self, samples):
+#
+#         assert samples.nelement() == samples.size(1) * samples.size(0), '?'
+#
+#         samples = samples.view(samples.size(0), -1)
+#
+#         self.samples_var = utils.var(samples)
+#         self.samples_mean = samples.mean(0)
+#
+#         samples_mean = self.samples_mean
+#         samples_var = self.samples_var
+#
+#         if self.direction == 'pq':
+#             t1 = (1 + samples_mean.pow(2)) / (2 * samples_var.pow(2))
+#             t2 = samples_var.log()
+#
+#             KL = (t1 + t2 - 0.5).mean()
+#         else:
+#             # In the AGE implementation, there is samples_var^2 instead of samples_var^1
+#             t1 = (samples_var + samples_mean.pow(2)) / 2
+#             # In the AGE implementation, this did not have the 0.5 scaling factor:
+#             t2 = -0.5*samples_var.log()
+#             KL = (t1 + t2 - 0.5).mean()
+#
+#         if not self.minimize:
+#             KL *= -1
+#
+#         return KL
+
+
+# if train_mode == config.MODE_CYCLIC:
+#     if args.use_loss_z_reco:
+#         stats['z_reconstruction_error'] = z_diff.data #[0]
+
 
 # if args.use_real_x_KL:
 #     # KL_real: - \Delta( e(X) , Z ) -> max_e

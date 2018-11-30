@@ -27,8 +27,6 @@ def parse_args():
     parser.add_argument('--match_x_metric', default='L1', help='none|L1|L2|cos')
     parser.add_argument('--match_z_metric', default='cos', help='none|L1|L2|cos')
     parser.add_argument('--noise', default='normal', help='normal|sphere')
-    #parser.add_argument('--batch_size', type=int,
-    #                default=16, help='batch size')
     parser.add_argument('--no_TB', action='store_true', help='Do not create Tensorboard logs')
     parser.add_argument('--start_iteration', type=int, default=0)
     # parser.add_argument('--use_ALQ', type=int, default=0, help='Reserved for future use')
@@ -37,7 +35,7 @@ def parse_args():
     parser.add_argument('--save_dir', default='/data/autoencoder/tests', help='folder to output images')
 
     ################################################################
-    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--images_per_stage', type=int, default=1e6)
     parser.add_argument('--checkpoint_cycle', type=int, default=100)
     #################################################################
@@ -88,24 +86,24 @@ def init():
 
     # number of features
     args.nz = 512
-    args.n_critic = 1
-    args.n_generator = 2
+    args.n_critic = 5
+    # args.n_generator = 2
     # number of input image channels
     args.nc = 1
 
-    args.use_loss_x_reco    = True
-    args.use_real_x_KL      = False
+    # args.use_loss_x_reco    = True
+    # args.use_real_x_KL      = False
 
-    args.use_loss_fake_D_KL = False
+    # args.use_loss_fake_D_KL = False
 
-    args.use_loss_z_reco    = False
-    args.use_loss_KL_z      = False
+    # args.use_loss_z_reco    = False
+    # args.use_loss_KL_z      = False
 
     args.match_x = 1
-    args.match_z = 100
-    args.fake_D_KL_scale = 0.1
-    args.fake_G_KL_scale = args.fake_D_KL_scale
-    args.real_x_KL_scale = 0.1
+    # args.match_z = 100
+    # args.fake_D_KL_scale = 0.1
+    # args.fake_G_KL_scale = args.fake_D_KL_scale
+    # args.real_x_KL_scale = 0.1
 
     args.use_TB = not args.no_TB
 

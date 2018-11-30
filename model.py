@@ -7,6 +7,22 @@ from    cnnutils import SpectralNormConv2d, EqualConv2d, PixelNorm
 
 args   = config.get_config()
 
+# def get_grad_penalty(discriminator, real_image, fake_image, step, batch, alpha):
+#     """ Used in WGAN-GP version only. """
+#     eps = torch.rand(batch, 1, 1, 1).cuda()
+#
+#     x_hat = eps * real_image.data + (1 - eps) * fake_image.data
+#     x_hat = Variable(x_hat, requires_grad=True)
+#
+#     hat_predict, _ = discriminator(x_hat, step, alpha)
+#     grad_x_hat = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
+#
+#     # Push the gradients of the interpolated samples towards 1
+#     grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - 1)**2).mean()
+#     # grad_penalty = 10 * grad_penalty
+#     return grad_penalty
+
+
 class ConvBlock(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size,
                  padding, kernel_size2=None, padding2=None,
@@ -108,12 +124,11 @@ class Generator(nn.Module):
 
         return out
 
-pixelNormInDiscriminator = False
 
-class Discriminator(nn.Module):
+class Encoder(nn.Module):
     def __init__(self, nz):
         super().__init__()
-        # self.binary_predictor = binary_predictor
+        pixelNormInDiscriminator    = False
         spectralNormInDiscriminator = True
         self.progression = nn.ModuleList([ConvBlock(int(nz/32), int(nz/16), 3, 1,
                                                     pixel_norm=pixelNormInDiscriminator,
@@ -141,7 +156,7 @@ class Discriminator(nn.Module):
                                                     spectral_norm=spectralNormInDiscriminator),
                                           ConvBlock(nz, nz, 3, 1, 4, 0,
                                                     pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator)]) #(nz+1 if use_mean_std_layer else nz)
+                                                    spectral_norm=spectralNormInDiscriminator)])
 
         self.from_gray = nn.ModuleList([nn.Conv2d(1, int(nz/32), 1),
                                        nn.Conv2d(1, int(nz/16), 1),
@@ -152,7 +167,6 @@ class Discriminator(nn.Module):
                                        nn.Conv2d(1, nz, 1),
                                        nn.Conv2d(1, nz, 1),
                                        nn.Conv2d(1, nz, 1)])
-
 
         self.n_layer = len(self.progression)
 
@@ -173,11 +187,21 @@ class Discriminator(nn.Module):
                     skip_rgb = self.from_gray[index + 1](skip_rgb)
                     out = (1 - alpha) * skip_rgb + alpha * out
 
-        z_out = out.squeeze(2).squeeze(2)
-        # out = z_out.view(z_out.size(0), -1) #TODO: Is this needed?
-        return z_out
-        # return utils.normalize(z_out)
+        # out = out.squeeze(2).squeeze(2)
+        # return bottleneck and classification
+        return out
+        # return utils.normalize(out),cls
 
+class Critic(nn.Module):
+    def __init__(self, nz):
+        super().__init__()
+        self.classifier = nn.Sequential(SpectralNormConv2d(nz,nz,3,padding=0),
+                                        nn.LeakyReLU(0.2),
+                                        nn.AdaptiveAvgPool2d(1),
+                                        nn.Conv2d(nz, 1, 1))
+
+    def forward(self, input):
+        return self.classifier(input).squeeze(2).squeeze(2)
 
 ############# JUNK #########################
 

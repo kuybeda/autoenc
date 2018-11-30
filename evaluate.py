@@ -19,45 +19,19 @@ def tests_run(generator, encoder, test_data_loader, session, reconstruction=True
     #     Utils.generate_random_samples(generator, session.sample_i, session)
 
 class Utils:
-    @staticmethod
-    def generate_random_samples(generator, global_i, session):
-        generator.eval()
-
-        utils.requires_grad(generator, False)
-        
-        nsamples = args.test_cols * args.test_rows
-
-        # obtain samples
-        myz      = Variable(torch.randn(nsamples, args.nz)).cuda()
-        # myz      = utils.normalize(myz)
-
-        # myz, input_class = utils.split_labels_out_of_latent(myz)
-
-        ims      = generator(myz, session.phase, session.alpha).detach() #.cpu().numpy()
-
-        sample_dir  = '{}/sample'.format(args.save_dir)
-        save_path   = '{}/{}.png'.format(sample_dir, str(global_i + 1).zfill(6))
-        mkdir_assure(sample_dir)
-
-        torchvision.utils.save_image(ims, save_path, nrow=args.test_cols, normalize=True, range=(-1, 1), padding=0)
-
-        generator.train()
-
-    reconstruction_set_x = None
 
     @staticmethod
     def reconstruct(input_image, encoder, generator, session):
-        ex = encoder(input_image, session.phase, session.alpha).detach()
+        ex = encoder(input_image, session.phase, session.alpha)
         # ex = encoder(Variable(input_image, volatile=True), session.phase, session.alpha, args.use_ALQ).detach()
         # ex, label = utils.split_labels_out_of_latent(ex)
-        gex = generator(ex, session.phase, session.alpha).detach()
+        gex = generator(ex.detach(), session.phase, session.alpha).detach()
         return gex.data[:]
 
     @staticmethod
     def reconstruct_images(generator, encoder, loader, global_i, session):
         generator.eval()
         encoder.eval()
-
         utils.requires_grad(generator, False)
         utils.requires_grad(encoder, False)
 
@@ -77,6 +51,8 @@ class Utils:
 
         torchvision.utils.save_image(out_ims, save_path, nrow=args.test_cols, normalize=True, padding=0, scale_each=False)
 
+        utils.requires_grad(generator, True)
+        utils.requires_grad(encoder, True)
         encoder.train()
         generator.train()
 
@@ -104,13 +80,41 @@ class Utils:
             ex = encoder(x, session.phase, session.alpha, args.use_ALQ).detach()
             # ex, label = utils.split_labels_out_of_latent(ex)
             gex = generator(ex, session.phase, session.alpha).detach()
-                
+
+        utils.requires_grad(generator, True)
+        utils.requires_grad(encoder, True)
         encoder.train()
         generator.train()
 
 
 
 ########### JUNK #################
+
+    # @staticmethod
+    # def generate_random_samples(generator, global_i, session):
+    #     generator.eval()
+    #     utils.requires_grad(generator, False)
+    #
+    #     nsamples = args.test_cols * args.test_rows
+    #
+    #     # obtain samples
+    #     myz = Variable(torch.randn(nsamples, args.nz)).cuda()
+    #     # myz      = utils.normalize(myz)
+    #
+    #     # myz, input_class = utils.split_labels_out_of_latent(myz)
+    #
+    #     ims = generator(myz, session.phase, session.alpha).detach()  # .cpu().numpy()
+    #
+    #     sample_dir = '{}/sample'.format(args.save_dir)
+    #     save_path = '{}/{}.png'.format(sample_dir, str(global_i + 1).zfill(6))
+    #     mkdir_assure(sample_dir)
+    #
+    #     torchvision.utils.save_image(ims, save_path, nrow=args.test_cols, normalize=True, range=(-1, 1), padding=0)
+    #
+    #     utils.requires_grad(generator, True)
+    #     generator.train()
+
+    # reconstruction_set_x = None
 
 # from    PIL import Image
 # import  os

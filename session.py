@@ -1,4 +1,4 @@
-from    model import Generator, Discriminator
+from    model import Generator, Encoder, Critic
 from    torch import nn, optim
 import  config
 import  torch
@@ -14,6 +14,24 @@ def accumulate(model1, model2, decay=0.999):
     for k in par1.keys():
         par1[k].data.mul_(decay).add_(1 - decay, par2[k].data)
 
+def batch_size(reso):
+    if args.gpu_count == 1:
+        save_memory = False
+        if not save_memory:
+            batch_table = {4: 128, 8: 128, 16: 128, 32: 64, 64: 32, 128: 16, 256: 8, 512: 4, 1024: 1}
+        else:
+            batch_table = {4: 128, 8: 128, 16: 128, 32: 32, 64: 16, 128: 4, 256: 2, 512: 2, 1024: 1}
+    elif args.gpu_count == 2:
+        batch_table = {4: 256, 8: 256, 16: 256, 32: 128, 64: 64, 128: 32, 256: 16, 512: 8, 1024: 2}
+    elif args.gpu_count == 4:
+        batch_table = {4: 512, 8: 256, 16: 128, 32: 64, 64: 32, 128: 32, 256: 32, 512: 16, 1024: 4}
+    elif args.gpu_count == 8:
+        batch_table = {4: 512, 8: 512, 16: 512, 32: 256, 64: 256, 128: 128, 256: 64, 512: 32, 1024: 8}
+    else:
+        assert (False)
+
+    return batch_table[reso]
+
 class Session:
     def __init__(self):
         # Note: 4 requirements for sampling from pre-existing models:
@@ -26,9 +44,10 @@ class Session:
         self.sample_i = min(args.start_iteration, 0)
         self.phase = args.start_phase
 
+        self.encoder    = nn.DataParallel(Encoder(nz=args.nz).cuda())
         self.generator  = nn.DataParallel(Generator(args.nz).cuda())
         self.g_running  = nn.DataParallel(Generator(args.nz).cuda())
-        self.encoder    = nn.DataParallel(Discriminator(nz=args.nz).cuda())
+        self.critic     = nn.DataParallel(Critic(args.nz).cuda())
 
         print("Using ", torch.cuda.device_count(), " GPUs!")
 
@@ -39,17 +58,22 @@ class Session:
     def cur_res(self):
         return  8 * 2 ** self.phase
 
+    def cur_batch(self):
+        return batch_size(self.cur_res())
+
     def reset_opt(self):
         self.optimizerG = optim.Adam(self.generator.parameters(), args.lr, betas=(0.0, 0.99))
-        self.optimizerD = optim.Adam(self.encoder.parameters(), args.lr,
-                                     betas=(0.0, 0.99))  # includes all the encoder parameters...
+        self.optimizerE = optim.Adam(self.encoder.parameters(), args.lr, betas=(0.0, 0.99))  # includes all the encoder parameters...
+        self.optimizerC = optim.Adam(self.critic.parameters(), args.lr, betas=(0.0, 0.99))  # includes all the encoder parameters...
 
     def save_all(self, path):
         torch.save({'G_state_dict': self.generator.state_dict(),
-                    'D_state_dict': self.encoder.state_dict(),
+                    'E_state_dict': self.encoder.state_dict(),
+                    'C_state_dict': self.critic.state_dict(),
                     'G_running_state_dict': self.g_running.state_dict(),
-                    'optimizerD': self.optimizerD.state_dict(),
+                    'optimizerE': self.optimizerE.state_dict(),
                     'optimizerG': self.optimizerG.state_dict(),
+                    'optimizerC': self.optimizerC.state_dict(),
                     'iteration': self.sample_i,
                     'phase': self.phase,
                     'alpha': self.alpha},
@@ -61,11 +85,13 @@ class Session:
 
         self.generator.load_state_dict(checkpoint['G_state_dict'])
         self.g_running.load_state_dict(checkpoint['G_running_state_dict'])
-        self.encoder.load_state_dict(checkpoint['D_state_dict'])
+        self.encoder.load_state_dict(checkpoint['E_state_dict'])
+        self.critic.load_state_dict(checkpoint['C_state_dict'])
 
         if args.reset_optimizers <= 0:
-            self.optimizerD.load_state_dict(checkpoint['optimizerD'])
+            self.optimizerE.load_state_dict(checkpoint['optimizerE'])
             self.optimizerG.load_state_dict(checkpoint['optimizerG'])
+            self.optimizerC.load_state_dict(checkpoint['optimizerC'])
             print("Reloaded old optimizers")
         else:
             print("Despite loading the state, we reset the optimizers.")
