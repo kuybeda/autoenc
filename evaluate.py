@@ -38,7 +38,7 @@ class Utils:
         reso        = session.cur_res()
         nsamples    = args.test_cols * args.test_rows
 
-        dataset     = data.Utils.sample_data2(loader, nsamples, reso, session)
+        dataset     = data.Utils.sample_data2(loader, nsamples, reso)
 
         input_ims,_ = next(dataset)
         reco_ims    = Utils.reconstruct(input_ims, encoder, generator, session)

@@ -19,10 +19,10 @@ def parse_args():
     parser.add_argument('--phase_offset', type=int, default=0, help='Use the reloaded model but start fresh from next phase (when manually moving to the next )')
     parser.add_argument('--step_offset', type=int, default=0, help='Use the reloaded model but ignore the given number of steps (use -1 for all steps)')
 
-    parser.add_argument('-d', '--data', default='mrc', type=str,
-                        choices=['celeba', 'lsun', 'cifar10', 'celebaHQ', 'mrc'],
-                        help=('Specify dataset. '
-                            'Currently celeba, lsun and cifar10 are supported'))
+    # parser.add_argument('-d', '--data', default='mrc', type=str,
+    #                     choices=['celeba', 'lsun', 'cifar10', 'celebaHQ', 'mrc'],
+    #                     help=('Specify dataset. '
+    #                         'Currently celeba, lsun and cifar10 are supported'))
     parser.add_argument('--KL', default='qp', help='The KL divergence direction [pq|qp]')
     parser.add_argument('--match_x_metric', default='L1', help='none|L1|L2|cos')
     parser.add_argument('--match_z_metric', default='cos', help='none|L1|L2|cos')
@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument('--save_dir', default='/data/autoencoder/tests', help='folder to output images')
 
     ################################################################
-    parser.add_argument('--lr', type=float, default=0.0001)
+    parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--images_per_stage', type=int, default=1e6)
     parser.add_argument('--checkpoint_cycle', type=int, default=100)
     #################################################################
@@ -86,7 +86,7 @@ def init():
 
     # number of features
     args.nz = 512
-    args.n_critic = 5
+    args.n_critic = 1
     # args.n_generator = 2
     # number of input image channels
     args.nc = 1
@@ -99,7 +99,7 @@ def init():
     # args.use_loss_z_reco    = False
     # args.use_loss_KL_z      = False
 
-    args.match_x = 1
+    # args.match_x = 1
     # args.match_z = 100
     # args.fake_D_KL_scale = 0.1
     # args.fake_G_KL_scale = args.fake_D_KL_scale
@@ -129,9 +129,9 @@ def init():
 
     print(args)
 
-    print("Total training samples {}k. Max phase for dataset {} is {}. \
+    print("Total training samples {}k. Max phase for dataset is {}. \
           Once the maximum phase is trained the full round, we continue \
-          training that phase.".format(args.total_kimg, args.data, args.max_phase))
+          training that phase.".format(args.total_kimg, args.max_phase))
    
 
 def get_config():

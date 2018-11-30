@@ -1,4 +1,3 @@
-# import  torch
 from    torch import nn
 from    torch.nn import functional as F
 import  utils
@@ -7,26 +6,10 @@ from    cnnutils import SpectralNormConv2d, EqualConv2d, PixelNorm
 
 args   = config.get_config()
 
-# def get_grad_penalty(discriminator, real_image, fake_image, step, batch, alpha):
-#     """ Used in WGAN-GP version only. """
-#     eps = torch.rand(batch, 1, 1, 1).cuda()
-#
-#     x_hat = eps * real_image.data + (1 - eps) * fake_image.data
-#     x_hat = Variable(x_hat, requires_grad=True)
-#
-#     hat_predict, _ = discriminator(x_hat, step, alpha)
-#     grad_x_hat = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
-#
-#     # Push the gradients of the interpolated samples towards 1
-#     grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - 1)**2).mean()
-#     # grad_penalty = 10 * grad_penalty
-#     return grad_penalty
-
-
 class ConvBlock(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size,
                  padding, kernel_size2=None, padding2=None,
-                 pixel_norm=False, spectral_norm=False):
+                 pixel_norm=True, spectral_norm=False):
 
         super().__init__()
 
@@ -51,7 +34,7 @@ class ConvBlock(nn.Module):
 
         else:
             if pixel_norm:
-                assert(0)
+                # assert(0)
                 self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
                                           PixelNorm(),
                                           # nn.PReLU(),
@@ -108,7 +91,7 @@ class Generator(nn.Module):
         for i, (conv, to_gray) in enumerate(zip(self.progression, self.to_gray)):
 
             if i > 0 and step > 0:
-                upsample = F.interpolate(out, scale_factor=2)
+                upsample = F.interpolate(out, scale_factor=2, mode='bilinear', align_corners=True)
                 out = conv(upsample)
             else:
                 out = conv(out)
@@ -170,7 +153,7 @@ class Encoder(nn.Module):
 
         self.n_layer = len(self.progression)
 
-    def forward(self, input, step, alpha): #default was step=0, alpha=-1
+    def forward(self, input, step, alpha):
         for i in range(step, -1, -1):
             index = self.n_layer - i - 1
 
@@ -188,16 +171,20 @@ class Encoder(nn.Module):
                     out = (1 - alpha) * skip_rgb + alpha * out
 
         # out = out.squeeze(2).squeeze(2)
-        # return bottleneck and classification
-        return out
-        # return utils.normalize(out),cls
+        # return out
+        return utils.normalize(out)
 
 class Critic(nn.Module):
     def __init__(self, nz):
         super().__init__()
         self.classifier = nn.Sequential(SpectralNormConv2d(nz,nz,3,padding=0),
-                                        nn.LeakyReLU(0.2),
+                                        nn.PReLU(),
+                                        # nn.LeakyReLU(0.2),
+                                        SpectralNormConv2d(nz, nz, 3, padding=0),
+                                        nn.PReLU(),
+                                        # nn.LeakyReLU(0.2),
                                         nn.AdaptiveAvgPool2d(1),
+                                        # SpectralNormConv2d(nz, 1, 1, padding=0))
                                         nn.Conv2d(nz, 1, 1))
 
     def forward(self, input):

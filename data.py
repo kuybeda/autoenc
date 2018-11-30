@@ -1,8 +1,4 @@
 import  os
-# import random
-import  numpy as np
-from    PIL import Image
-import  torch
 from    torchvision import datasets, transforms, utils
 from    torch.utils.data import DataLoader
 import  mrcfile
@@ -11,7 +7,7 @@ import config
 
 args = config.get_config()
 
-def get_loader(datasetName, path):
+def get_loader(path):
     def mrc_loader(fname):
         with mrcfile.open(fname) as mrc:
             im = mrc.data
@@ -24,37 +20,18 @@ def get_loader(datasetName, path):
     return loader
 
 class Utils:
-    # maybeRandomHorizontalFlip = transforms.RandomHorizontalFlip() if args.sample_mirroring else transforms.Lambda(lambda x: x)
     #TODO Triple-check that image_size can be given this way instead of always calculated from session.step
     @staticmethod
-    def sample_data2(dataloader, batch_size, image_size, session):
+    def sample_data2(dataloader, batch_size, image_size):
         transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize(image_size),
             transforms.ToTensor(),
         ])
 
-        fade = session.phase > 0 and session.alpha < 1.0
-
         loader = dataloader(transform, batch_size=batch_size)
         for img, label in loader:
-            if True: #not fade:
-                yield img, label
-            else:
-                transform_prev = transforms.Compose([
-                    transforms.ToPILImage(mode='F'),
-                    # Downsample
-                    transforms.Resize(image_size // 2),
-                    # Upsample with linear interpolation
-                    transforms.Resize(image_size, interpolation=Image.LINEAR),
-                    transforms.ToTensor(),
-                ])
-
-                # mixed_img = img * session.alpha + ((1.0 - session.alpha) * torch.from_numpy(img_prev))
-                img_prev  = torch.stack([transform_prev(im[0][...,None].numpy()) for im in img])
-                mixed_img = img * session.alpha + (1.0-session.alpha)*img_prev
-
-                yield mixed_img, label
+            yield img, label
 
         print("Finished epoch !! ")
 
@@ -85,6 +62,34 @@ def dump_training_set(loader, dump_trainingset_N, dump_trainingset_dir, session)
 
 
 ######## JUNK #########
+# import random
+# import  numpy as np
+# from    PIL import Image
+# import  torch
+
+    # maybeRandomHorizontalFlip = transforms.RandomHorizontalFlip() if args.sample_mirroring else transforms.Lambda(lambda x: x)
+
+        # fade = session.phase > 0 and session.alpha < 1.0
+
+
+            # if True: #not fade:
+            #     yield img, label
+            # else:
+            #     transform_prev = transforms.Compose([
+            #         transforms.ToPILImage(mode='F'),
+            #         # Downsample
+            #         transforms.Resize(image_size // 2),
+            #         # Upsample with linear interpolation
+            #         transforms.Resize(image_size, interpolation=Image.LINEAR),
+            #         transforms.ToTensor(),
+            #     ])
+            #
+            #     # mixed_img = img * session.alpha + ((1.0 - session.alpha) * torch.from_numpy(img_prev))
+            #     img_prev  = torch.stack([transform_prev(im[0][...,None].numpy()) for im in img])
+            #     mixed_img = img * session.alpha + (1.0-session.alpha)*img_prev
+            #
+            #     yield mixed_img, label
+
 
         # mrc = mrcfile.open(fname)
         # im = mrc.data

@@ -1,5 +1,3 @@
-# import numpy as np
-# from PIL import Image
 from tqdm import tqdm
 
 import  torch
@@ -19,27 +17,24 @@ from   session import Session, accumulate
 import torch.backends.cudnn as cudnn
 cudnn.benchmark = True
 
-# from torch.nn import functional as F
-
 args   = config.get_config()
 writer = None
 
-def train(generator, encoder, g_running, train_data_loader, test_data_loader, session, total_steps, train_mode):
+def train(session, train_data_loader, test_data_loader, total_steps, train_mode):
     pbar = tqdm(initial=session.sample_i, total = total_steps)
 
-    refresh_dataset   = True
+    encoder,generator,g_running,critic = session.encoder,session.generator,session.g_running,session.critic
 
-    # After the Loading stage, we cycle through successive Fade-in and Stabilization stages
-
-    batch_count = 0
+    refresh_dataset = True
+    batch_count     = 0
 
     reset_optimizers_on_phase_start = False
 
     # TODO Unhack this (only affects the episode count statistics anyway):
-    if args.data != 'celebaHQ':
-        epoch_len = len(train_data_loader(1,4).dataset)
-    else:
-        epoch_len = train_data_loader._len['data4x4']
+    # if args.data != 'celebaHQ':
+    epoch_len = len(train_data_loader(1,4).dataset)
+    # else:
+    #     epoch_len = train_data_loader._len['data4x4']
 
     if args.step_offset != 0:
         if args.step_offset == -1:
@@ -68,8 +63,10 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
                 if reset_optimizers_on_phase_start:
                     utils.requires_grad(generator)
                     utils.requires_grad(encoder)
+                    utils.requires_grad(critic)
                     generator.zero_grad()
                     encoder.zero_grad()
+                    critic.zero_grad()
                     session.reset_opt()
                     print("Optimizers have been reset.")                
 
@@ -78,14 +75,12 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
 
         # If we can switch from fade-training to stable-training
         if sample_i_current_stage >= args.images_per_stage:
-            refresh_dataset = True # refresh dataset generator since no longer have to fade
-
-        match_x = args.match_x
+            refresh_dataset = True
 
         session.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage) # For 100k, it was 0.00002 = 2.0 / args.images_per_stage
 
         if refresh_dataset:
-            train_dataset = data.Utils.sample_data2(train_data_loader, batch, reso, session)
+            train_dataset = data.Utils.sample_data2(train_data_loader, batch, reso)
             refresh_dataset = False
             print("Refreshed dataset. Alpha={} and iteration={}".format(session.alpha, sample_i_current_stage))
 
@@ -94,65 +89,68 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
         try:
             real_image, _ = next(train_dataset)
         except (OSError, StopIteration):
-            train_dataset = data.Utils.sample_data2(train_data_loader, batch, reso, session)
+            train_dataset = data.Utils.sample_data2(train_data_loader, batch, reso)
             real_image, _ = next(train_dataset)
 
-        # if (batch_count + 1) % (args.n_critic + 1) == 0:
-        #     utils.switch_grad_updates_to_first_of(generator, encoder)
-        #     generator.zero_grad()
-        # else:
-        #     utils.switch_grad_updates_to_first_of(encoder, generator)
-        #     encoder.zero_grad()
+        if (batch_count + 1) % (args.n_critic + 1) == 0:
+            utils.requires_grad(encoder, True)
+            utils.requires_grad(generator, True)
+            utils.requires_grad(critic, False)
+        else:
+            utils.requires_grad(encoder, False)
+            utils.requires_grad(generator, False)
+            utils.requires_grad(critic, True)
 
-        # utils.requires_grad(generator)
-        # utils.requires_grad(encoder)
-
-        # utils.switch_grad_updates_to_first_of(encoder, generator)
         encoder.zero_grad()
         generator.zero_grad()
+        critic.zero_grad()
 
-        x = Variable(real_image).cuda(async=(args.gpu_count>1))
+        x = Variable(real_image).cuda(async=(args.gpu_count > 1))
         losses = []
 
-        real_z  = encoder(x, session.phase, session.alpha)
-        recon_x = generator(real_z, session.phase, session.alpha)
+        real_z   = encoder(x, session.phase, session.alpha)
+        fake_x   = generator(real_z, session.phase, session.alpha)
+        fake_z   = encoder(fake_x, session.phase, session.alpha)
+        fake_cls = critic(fake_z)
 
-        # match_x: E_x||g(e(x)) - x|| -> min_e
-        err = utils.mismatch(recon_x, x, args.match_x_metric) * match_x
-        losses.append(err)
-        stats['x_reconstruction_error'] = err.data
+        if (batch_count + 1) % (args.n_critic + 1) == 0:
+            ###### Autoencoder update #########
+            # match_x: E_x||g(e(x)) - x|| -> min_e
+            err = utils.mismatch(fake_x, x, args.match_x_metric)
+            losses.append(err)
+            stats['x_reconstruction_error'] = err.data
 
-        # fake_z,fake_cls  = encoder(recon_x, session.phase, session.alpha)
+            wgan_G_loss =  -fake_cls.mean()
+            losses.append(wgan_G_loss)
 
-        loss = sum(losses)
-        stats['G_loss'] = loss.data.cpu().numpy()
-        loss.backward()
+            loss = sum(losses)
+            stats['G_loss'] = loss.data.cpu().numpy()
+            loss.backward()
 
-        session.optimizerE.step()
-        session.optimizerG.step()
-        accumulate(g_running, generator)
-        # torch.cuda.empty_cache()
+            session.optimizerE.step()
+            session.optimizerG.step()
+            accumulate(g_running, generator)
+            # torch.cuda.empty_cache()
 
-        # if (batch_count + 1) % (args.n_critic + 1) == 0:
-        #     # Decoder/generator update
-        #     # construct generator loss
-        #     wgan_G_loss =  -fake_cls.mean()
-        #     losses.append(wgan_G_loss)
-        #     loss = sum(losses)
-        #     stats['D_loss'] = loss
-        #     loss.backward()
-        #     session.optimizerG.step()
-        #     # torch.cuda.empty_cache()
-        #     accumulate(g_running, generator)
-        # else:
-        #     # Encoder/discriminator update
-        #     wgan_D_loss = fake_cls.mean()-real_cls.mean()
-        #     losses.append(wgan_D_loss)
-        #     loss = sum(losses)
-        #     stats['E_loss'] = loss.data.cpu().numpy()
-        #     loss.backward()
-        #     session.optimizerE.step()
-        #     # torch.cuda.empty_cache()
+            ########################  Statistics ########################
+            xr = stats['x_reconstruction_error']
+            e = (session.sample_i / float(epoch_len))
+            pbar.set_description(
+                ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-reco {7:.3f};').format(\
+                    batch_count+1, session.sample_i+1, session.phase, batch, session.alpha, reso, e, xr)
+                )
+            pbar.update(batch)
+        else:
+            ####### Critic update ########
+            real_cls = critic(real_z)
+            wgan_C_loss = fake_cls.mean()-real_cls.mean()
+            losses.append(wgan_C_loss)
+            loss = sum(losses)
+            stats['C_loss'] = loss.data.cpu().numpy()
+            loss.backward()
+            # session.optimizerE.step()
+            session.optimizerC.step()
+            # torch.cuda.empty_cache()
 
         # del x, real_image, real_z, recon_x
 
@@ -163,16 +161,6 @@ def train(generator, encoder, g_running, train_data_loader, test_data_loader, se
         elif batch_count % 100 == 0:
             print(stats)
 
-        ########################  Statistics ######################## 
-
-        xr = stats['x_reconstruction_error'] if train_mode == config.MODE_CYCLIC else 0.0
-        e = (session.sample_i / float(epoch_len))
-        pbar.set_description(
-            ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-reco {7:.3f};').format(\
-                batch_count+1, session.sample_i+1, session.phase, batch, session.alpha, reso, e, xr)
-            )
-
-        pbar.update(batch)
         session.sample_i += batch
         batch_count += 1
 
@@ -222,22 +210,22 @@ def main():
     print('PyTorch {}'.format(torch.__version__))
 
     if args.train_path:
-        train_data_loader = data.get_loader(args.data, args.train_path)
+        train_data_loader = data.get_loader(args.train_path)
     else:
         train_data_loader = None
     
     if args.test_path:
-        test_data_loader = data.get_loader(args.data, args.test_path)
+        test_data_loader = data.get_loader(args.test_path)
     elif args.aux_inpath:
-        test_data_loader = data.get_loader(args.data, args.aux_inpath)
+        test_data_loader = data.get_loader(args.aux_inpath)
     else:
         test_data_loader = None
 
     # 4 modes: Train (with data/train), test (with data/test), aux-test (with custom aux_inpath), dump-training-set
     
     if args.run_mode == config.RUN_TRAIN:
-        train(session.generator, session.encoder, session.g_running, train_data_loader, test_data_loader,
-            session  = session, total_steps = args.total_kimg * 1000, train_mode = args.train_mode)
+        train(session, train_data_loader, test_data_loader,
+              total_steps = args.total_kimg * 1000, train_mode = args.train_mode)
 
     elif args.run_mode == config.RUN_TEST:
         if args.reconstructions_N > 0 or args.interpolate_N > 0:
@@ -252,6 +240,34 @@ if __name__ == '__main__':
 
 
 ########## JUNK ########################
+
+# import numpy as np
+# from PIL import Image
+
+
+# grad_loss   = get_grad_penalty(encoder,critic,
+#                                x, fake_x, session.phase,
+#                                batch, session.alpha)
+# losses.append(grad_loss)
+
+
+# def get_grad_penalty(encoder, critic, real_image, fake_image, step, batch, alpha):
+#     eps = torch.rand(batch, 1, 1, 1).cuda()
+#
+#     x_hat = eps * real_image.data + (1 - eps) * fake_image.data
+#     x_hat = Variable(x_hat, requires_grad=True)
+#
+#     hat_z = encoder(x_hat, step, alpha)
+#     hat_predict = critic(hat_z)
+#     grad_x_hat  = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
+#
+#     # Push the gradients of the interpolated samples towards 1
+#     grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - 1)**2).mean()
+#     return grad_penalty
+
+
+# from torch.nn import functional as F
+
 
 # one = torch.FloatTensor([1]).cuda(async=(args.gpu_count>1))
 
