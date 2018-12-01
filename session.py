@@ -52,6 +52,7 @@ class Session:
         print("Using ", torch.cuda.device_count(), " GPUs!")
         self.reset_opt()
         self.setup()
+        print('Session created.')
 
     def setup(self):
         utils.make_dirs()
@@ -61,15 +62,6 @@ class Session:
         random.seed(args.manual_seed)
         torch.manual_seed(args.manual_seed)
         torch.cuda.manual_seed_all(args.manual_seed)
-
-        if args.use_TB:
-            from dateutil import tz
-            from tensorboardX import SummaryWriter
-            dt = datetime.now(tz.gettz('US/Pacific')).strftime(r"%y%m%d_%H%M")
-            self.writer = SummaryWriter("{}/{}/{}".format(args.summary_dir, args.save_dir, dt))
-        else:
-            self.write  = None
-        print('Session created.')
 
         if args.train_path:
             self.train_data_loader  = data.get_loader(args.train_path)
@@ -99,10 +91,19 @@ class Session:
     def cur_batch(self):
         return batch_size(self.cur_res())
 
-    def init(self):
+    def init_stats(self):
+        if args.use_TB:
+            from dateutil import tz
+            from tensorboardX import SummaryWriter
+            dt = datetime.now(tz.gettz('US/Pacific')).strftime(r"%y%m%d_%H%M")
+            self.writer = SummaryWriter("{}/{}/{}".format(args.summary_dir, args.save_dir, dt))
+        else:
+            self.writer  = None
         # init progress bar
         self.pbar = tqdm(initial=self.sample_i, total=self.total_steps)
 
+    def init_phase(self):
+        # init phase params
         self.batch_count = 0
         if args.step_offset != 0:
             if args.step_offset == -1:
@@ -110,9 +111,24 @@ class Session:
             print("Step offset is {}".format(args.step_offset))
             self.phase += args.phase_offset
             self.alpha = 0.0
-
         self.init_train_dataset()
-        self.update()
+        self.update_phase()
+
+    def update_phase(self):
+        steps_in_previous_phases    = max(self.phase * args.images_per_stage, args.step_offset)
+        sample_i_current_stage      = self.sample_i - steps_in_previous_phases
+
+        # If we can move to the next phase
+        if sample_i_current_stage  >= args.images_per_stage:
+            if self.phase < args.max_phase: # If any phases left
+                iteration_levels = int(sample_i_current_stage / args.images_per_stage)
+                self.phase += iteration_levels
+                sample_i_current_stage -= iteration_levels * args.images_per_stage
+                # reinitialize dataset to produce larger images
+                self.init_train_dataset()
+                print("iteration B alpha={} phase {} will be reduced to 1 and [max]".format(sample_i_current_stage, self.phase))
+        # alpha growth 1/4th of the cycle
+        self.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage)
 
     def init_train_dataset(self):
         self.train_dataset = data.Utils.sample_data2(self.train_data_loader, self.cur_batch(), self.cur_res())
@@ -146,33 +162,17 @@ class Session:
         elif self.batch_count % 100 == 0:
             print(stats)
 
-    def next(self):
+    def maintain_phase(self):
         #######################  Phase Maintenance #######################
         self.sample_i += self.cur_batch()
         self.batch_count += 1
-        self.update()
+        self.update_phase()
 
     def save_checkpoint(self):
         if self.batch_count % args.checkpoint_cycle == 0:
             for postfix in {'latest', str(self.sample_i).zfill(6)}:
                 self.save_all('{}/{}_state'.format(args.checkpoint_dir, postfix))
             print("Checkpointed to {}".format(self.sample_i))
-
-    def update(self):
-        steps_in_previous_phases    = max(self.phase * args.images_per_stage, args.step_offset)
-        sample_i_current_stage      = self.sample_i - steps_in_previous_phases
-
-        # If we can move to the next phase
-        if sample_i_current_stage  >= args.images_per_stage:
-            if self.phase < args.max_phase: # If any phases left
-                iteration_levels = int(sample_i_current_stage / args.images_per_stage)
-                self.phase += iteration_levels
-                sample_i_current_stage -= iteration_levels * args.images_per_stage
-                # reinitialize dataset to produce larger images
-                self.init_train_dataset()
-                print("iteration B alpha={} phase {} will be reduced to 1 and [max]".format(sample_i_current_stage, self.phase))
-        # alpha growth 1/4th of the cycle
-        self.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage)
 
     def finish(self):
         self.pbar.close()

@@ -65,7 +65,11 @@ def updateC(x, encoder, generator, critic, session):
 
 def train(session):
     encoder,generator,critic = session.encoder,session.generator,session.critic
-    session.init()
+    # init progress bar and tensorboard statistics
+    session.init_stats()
+    # decide initial phase, alpha, etc
+    session.init_phase()
+
     while session.sample_i < session.total_steps:
         x     = session.get_next_batch()
 
@@ -76,11 +80,11 @@ def train(session):
         # show and save statistics to tensorboard
         session.handle_stats(stats)
         # decide phase, alpha, etc
-        session.next()
+        session.maintain_phase()
         # save checkpoint if time is right
         session.save_checkpoint()
 
-        # ########################  Tests ########################
+        # write test images
         evaluate.tests_run(session, session.train_data_loader, reconstruction = (session.batch_count % 100 == 0))
 
     session.finish()
