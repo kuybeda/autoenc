@@ -11,23 +11,24 @@ class Generator(nn.Module):
     def __init__(self, nz, pixel_norm=False, spectral_norm=True):
         super().__init__()
 
-        self.progression = nn.ModuleList([DenseBlock('block1', nz, 32, nz//32,
+        mxgrow = 16
+        self.progression = nn.ModuleList([DenseBlock('block1', nz, mxgrow, nz//mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block2', nz, 32, nz // 32,
+                                          DenseBlock('block2', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block3', nz, 32, nz // 32,
+                                          DenseBlock('block3', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block4', nz, 32, nz // 32,
+                                          DenseBlock('block4', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block5', nz, 16, nz // 32,
+                                          DenseBlock('block5', nz, mxgrow//2, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block6', nz//2, 8, nz // 32,
+                                          DenseBlock('block6', nz//2, mxgrow//4, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block7', nz//4, 4, nz // 32,
+                                          DenseBlock('block7', nz//4, mxgrow//8, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block8', nz//8, 4, nz // 64,
+                                          DenseBlock('block8', nz//8, mxgrow//8, nz // (2*mxgrow),
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block9', nz//16, 2, nz // 64,
+                                          DenseBlock('block9', nz//16, mxgrow//16, nz // (2*mxgrow),
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
 
         self.to_gray = nn.ModuleList([nn.Conv2d(nz, 1, 1), #Each has 1 channel and kernel size 1x1!
@@ -67,23 +68,24 @@ class Generator(nn.Module):
 class Bottleneck(nn.Module):
     def __init__(self, nz, pixel_norm, spectral_norm):
         super().__init__()
-        self.progression = nn.ModuleList([DenseBlock('block1', nz//32, 4, nz // 64,
+        mxgrow = 16
+        self.progression = nn.ModuleList([DenseBlock('block1', nz//32, mxgrow//8, nz // (2*mxgrow),
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block2', nz // 16, 4, nz // 32,
+                                          DenseBlock('block2', nz // 16, mxgrow//8, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block3', nz // 8, 8, nz // 32,
+                                          DenseBlock('block3', nz // 8, mxgrow//4, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block4', nz // 4, 16, nz // 32,
+                                          DenseBlock('block4', nz // 4, mxgrow//2, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block5', nz // 2, 32, nz // 32,
+                                          DenseBlock('block5', nz // 2, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block6', nz, 32, nz // 32,
+                                          DenseBlock('block6', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block7', nz, 32, nz // 32,
+                                          DenseBlock('block7', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block8', nz, 32, nz // 32,
+                                          DenseBlock('block8', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block9', nz, 32, nz // 32,
+                                          DenseBlock('block9', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
 
         self.from_gray = nn.ModuleList([nn.Conv2d(1, int(nz/32), 1),

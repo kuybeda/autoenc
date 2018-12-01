@@ -1,8 +1,8 @@
 import argparse
 import torch
 
-MODE_GAN    = 0
-MODE_CYCLIC = 1
+# MODE_GAN    = 0
+# MODE_CYCLIC = 1
 
 RUN_TRAIN = 0
 RUN_TEST  = 1
@@ -19,10 +19,10 @@ def parse_args():
     parser.add_argument('--phase_offset', type=int, default=0, help='Use the reloaded model but start fresh from next phase (when manually moving to the next )')
     parser.add_argument('--step_offset', type=int, default=0, help='Use the reloaded model but ignore the given number of steps (use -1 for all steps)')
 
-    parser.add_argument('--KL', default='qp', help='The KL divergence direction [pq|qp]')
+    # parser.add_argument('--KL', default='qp', help='The KL divergence direction [pq|qp]')
     parser.add_argument('--match_x_metric', default='L1', help='none|L1|L2|cos')
     # parser.add_argument('--match_z_metric', default='cos', help='none|L1|L2|cos')
-    parser.add_argument('--noise', default='normal', help='normal|sphere')
+    # parser.add_argument('--noise', default='normal', help='normal|sphere')
     parser.add_argument('--no_TB', action='store_true', help='Do not create Tensorboard logs')
     parser.add_argument('--start_iteration', type=int, default=0)
 
@@ -31,7 +31,7 @@ def parse_args():
 
     ################################################################
     parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--images_per_stage', type=int, default=1e5)
+    parser.add_argument('--images_per_stage', type=int, default=1e6)
     parser.add_argument('--checkpoint_cycle', type=int, default=1000)
     #################################################################
 
@@ -43,7 +43,6 @@ def parse_args():
     parser.add_argument('--total_kimg', type=int, default=-1, help='The total number of samples to train for. 1 kimg = 1000 samples. Default values should be fine.')
     parser.add_argument('--manual_seed', type=int, default=123)
     parser.add_argument('--no_progression', action='store_true', help='No progressive growth. Set the network to the target size from the beginning. Note that the step count starts from non-zero to make the results comparable.')
-
 
     # Special modes:
     parser.add_argument('--dump_trainingset_N', type=int, default=0)
@@ -80,17 +79,17 @@ def init():
     assert(args.step_offset != 0 or args.phase_offset == 0)
 
     # number of features
-    args.nz = 128
+    args.nz = 64
     args.n_critic = 1
     # number of input image channels
-    args.nc = 1
+    # args.nc = 1
 
     args.use_TB = not args.no_TB
 
-    args.sample_mirroring = True
-    if args.testonly:
-        args.sample_mirroring = False
-        print("In test mode, sample mirroring is disabled automatically.")
+    # args.sample_mirroring = True
+    # if args.testonly:
+    #     args.sample_mirroring = False
+    #     print("In test mode, sample mirroring is disabled automatically.")
 
     if args.max_phase == -1:
         args.max_phase = 5
