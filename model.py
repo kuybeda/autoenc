@@ -1,3 +1,4 @@
+import  torch
 from    torch import nn
 from    torch.nn import functional as F
 import  utils
@@ -9,7 +10,7 @@ args   = config.get_config()
 class ConvBlock(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size,
                  padding, kernel_size2=None, padding2=None,
-                 pixel_norm=True, spectral_norm=False):
+                 pixel_norm=False, spectral_norm=False):
 
         super().__init__()
 
@@ -24,7 +25,7 @@ class ConvBlock(nn.Module):
             kernel2 = kernel_size2
 
         if spectral_norm:
-            # assert(0)
+            assert(0)
             self.conv = nn.Sequential(SpectralNormConv2d(in_channel, out_channel, kernel1, padding=pad1),
                                       nn.LeakyReLU(0.2),
                                       # nn.PReLU(),
@@ -46,7 +47,6 @@ class ConvBlock(nn.Module):
 
             else:
                 self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
-                                          # nn.PReLU(),
                                           nn.LeakyReLU(0.2),
                                           EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
                                           nn.LeakyReLU(0.2))
@@ -56,22 +56,29 @@ class ConvBlock(nn.Module):
         out = self.conv(input)
         return out
 
-gen_spectral_norm = False
-
 class Generator(nn.Module):
-    def __init__(self, nz):
+    def __init__(self, nz, pixel_norm=False, spectral_norm=False):
         super().__init__()
 
         self.code_norm = PixelNorm()
-        self.progression = nn.ModuleList([ConvBlock(nz, nz, 4, 3, 3, 1, spectral_norm=gen_spectral_norm),
-                                          ConvBlock(nz, nz, 3, 1, spectral_norm=gen_spectral_norm),
-                                          ConvBlock(nz, nz, 3, 1, spectral_norm=gen_spectral_norm),
-                                          ConvBlock(nz, nz, 3, 1, spectral_norm=gen_spectral_norm),
-                                          ConvBlock(nz, int(nz/2), 3, 1, spectral_norm=gen_spectral_norm),
-                                          ConvBlock(int(nz/2), int(nz/4), 3, 1, spectral_norm=gen_spectral_norm),
-                                          ConvBlock(int(nz/4), int(nz/8), 3, 1, spectral_norm=gen_spectral_norm),
-                                          ConvBlock(int(nz/8), int(nz/16), 3, 1, spectral_norm=gen_spectral_norm),
-                                          ConvBlock(int(nz/16), int(nz/32), 3, 1, spectral_norm=gen_spectral_norm)])
+        self.progression = nn.ModuleList([ConvBlock(nz, nz, 4, 3, 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                          ConvBlock(nz, nz, 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                          ConvBlock(nz, nz, 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                          ConvBlock(nz, nz, 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                          ConvBlock(nz, int(nz/2), 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                          ConvBlock(int(nz/2), int(nz/4), 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                          ConvBlock(int(nz/4), int(nz/8), 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                          ConvBlock(int(nz/8), int(nz/16), 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                          ConvBlock(int(nz/16), int(nz/32), 3, 1,
+                                                    pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
 
         self.to_gray = nn.ModuleList([nn.Conv2d(nz, 1, 1), #Each has 1 channel and kernel size 1x1!
                                      nn.Conv2d(nz, 1, 1),
@@ -91,7 +98,7 @@ class Generator(nn.Module):
         for i, (conv, to_gray) in enumerate(zip(self.progression, self.to_gray)):
 
             if i > 0 and step > 0:
-                upsample = F.interpolate(out, scale_factor=2, mode='bilinear', align_corners=True)
+                upsample = F.interpolate(out, scale_factor=2, mode='nearest')
                 out = conv(upsample)
             else:
                 out = conv(out)
@@ -107,39 +114,27 @@ class Generator(nn.Module):
 
         return out
 
-
-class Encoder(nn.Module):
-    def __init__(self, nz):
+class Bottleneck(nn.Module):
+    def __init__(self, nz, pixel_norm, spectral_norm):
         super().__init__()
-        pixelNormInDiscriminator    = False
-        spectralNormInDiscriminator = True
-        self.progression = nn.ModuleList([ConvBlock(int(nz/32), int(nz/16), 3, 1,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator),
-                                          ConvBlock(int(nz/16), int(nz/8), 3, 1,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator),
-                                          ConvBlock(int(nz/8), int(nz/4), 3, 1,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator),
-                                          ConvBlock(int(nz/4), int(nz/2), 3, 1,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator),
-                                          ConvBlock(int(nz/2), nz, 3, 1,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator),
-                                          ConvBlock(nz, nz, 3, 1,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator),
-                                          ConvBlock(nz, nz, 3, 1,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator),
-                                          ConvBlock(nz, nz, 3, 1,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator),
-                                          ConvBlock(nz, nz, 3, 1, 4, 0,
-                                                    pixel_norm=pixelNormInDiscriminator,
-                                                    spectral_norm=spectralNormInDiscriminator)])
+        self.progression = nn.ModuleList([  ConvBlock(int(nz / 32), int(nz / 16), 3, 1,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                            ConvBlock(int(nz / 16), int(nz / 8), 3, 1,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                            ConvBlock(int(nz / 8), int(nz / 4), 3, 1,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                            ConvBlock(int(nz / 4), int(nz / 2), 3, 1,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                            ConvBlock(int(nz / 2), nz, 3, 1,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                            ConvBlock(nz, nz, 3, 1,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                            ConvBlock(nz, nz, 3, 1,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                            ConvBlock(nz, nz, 3, 1,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+                                            ConvBlock(nz, nz, 3, 1, 4, 0,
+                                                        pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
 
         self.from_gray = nn.ModuleList([nn.Conv2d(1, int(nz/32), 1),
                                        nn.Conv2d(1, int(nz/16), 1),
@@ -153,7 +148,7 @@ class Encoder(nn.Module):
 
         self.n_layer = len(self.progression)
 
-    def forward(self, input, step, alpha):
+    def forward(self, pool, input, step, alpha):
         for i in range(step, -1, -1):
             index = self.n_layer - i - 1
 
@@ -169,28 +164,55 @@ class Encoder(nn.Module):
                     skip_rgb = F.avg_pool2d(input, 2)
                     skip_rgb = self.from_gray[index + 1](skip_rgb)
                     out = (1 - alpha) * skip_rgb + alpha * out
+        return out
 
-        # out = out.squeeze(2).squeeze(2)
-        # return out
-        return utils.normalize(out)
+class Encoder(Bottleneck):
+    def __init__(self, nz, pixel_norm=True, spectral_norm=False):
+        super().__init__(nz, pixel_norm, spectral_norm)
 
-class Critic(nn.Module):
-    def __init__(self, nz):
-        super().__init__()
-        self.classifier = nn.Sequential(SpectralNormConv2d(nz,nz,3,padding=0),
-                                        nn.PReLU(),
-                                        # nn.LeakyReLU(0.2),
-                                        SpectralNormConv2d(nz, nz, 3, padding=0),
-                                        nn.PReLU(),
-                                        # nn.LeakyReLU(0.2),
-                                        nn.AdaptiveAvgPool2d(1),
-                                        # SpectralNormConv2d(nz, 1, 1, padding=0))
-                                        nn.Conv2d(nz, 1, 1))
+    def forward(self,  input, step, alpha):
+        out = super().forward(F.avg_pool2d, input, step, alpha)
+        return out
 
-    def forward(self, input):
-        return self.classifier(input).squeeze(2).squeeze(2)
+class Critic(Bottleneck):
+    def __init__(self, nz, pixel_norm=True, spectral_norm=False):
+        super().__init__(nz, pixel_norm, spectral_norm)
 
-############# JUNK #########################
+        self.classifier  = nn.Sequential(EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
+                                         EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
+                                         nn.AdaptiveAvgPool2d(1),
+                                         nn.Conv2d(nz, 1, 1))
+
+    def forward(self, input, step, alpha):
+        out = super().forward(F.avg_pool2d, input, step, alpha)
+        return torch.sigmoid(self.classifier(out)).squeeze(2).squeeze(2)
+
+# class Critic(nn.Module):
+#     def __init__(self, nz):
+#         super().__init__()
+#
+# self.classifier = nn.Sequential(EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
+#                                 EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
+#                                 nn.AdaptiveAvgPool2d(1),
+#                                 nn.Conv2d(nz, 1, 1))
+#
+#
+#     def forward(self, input):
+#         return torch.sigmoid(self.classifier(input).squeeze(2)).squeeze(2)
+#
+# ############# JUNK #########################
+
+        # out = utils.normalize(out)
+
+
+        # self.classifier  = nn.Sequential(SpectralNormConv2d(nz,nz,3,padding=0), nn.LeakyReLU(0.2),
+        #                                 SpectralNormConv2d(nz, nz, 3, padding=0),nn.LeakyReLU(0.2),
+        #                                 nn.AdaptiveAvgPool2d(1),
+        #                                 nn.Conv2d(nz, 1, 1))
+
+
+        # self.classifier  = nn.Sequential(SpectralNormConv2d(nz,nz,1,padding=0), nn.LeakyReLU(0.2),
+        #                                  nn.Conv2d(nz, 1, 1))
 
         # if self.binary_predictor:
         #     self.linear = nn.Linear(nz, 1 + n_label)

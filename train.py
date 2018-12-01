@@ -8,19 +8,21 @@ from    datetime import datetime
 import  random
 import  os
 
-import config
-import utils
-import data
-import evaluate
-from   session import Session, accumulate
+import  config
+import  utils
+import  data
+import  evaluate
+from    session import Session, accumulate
+from    torch.nn import functional as F
 
 import torch.backends.cudnn as cudnn
 cudnn.benchmark = True
 
-args   = config.get_config()
-writer = None
+args     = config.get_config()
+writer   = None
+bcelogit = torch.nn.BCEWithLogitsLoss()
 
-def train(session, train_data_loader, test_data_loader, total_steps, train_mode):
+def train(session, train_data_loader, test_data_loader, total_steps):
     pbar = tqdm(initial=session.sample_i, total = total_steps)
 
     encoder,generator,g_running,critic = session.encoder,session.generator,session.g_running,session.critic
@@ -29,12 +31,7 @@ def train(session, train_data_loader, test_data_loader, total_steps, train_mode)
     batch_count     = 0
 
     reset_optimizers_on_phase_start = False
-
-    # TODO Unhack this (only affects the episode count statistics anyway):
-    # if args.data != 'celebaHQ':
     epoch_len = len(train_data_loader(1,4).dataset)
-    # else:
-    #     epoch_len = train_data_loader._len['data4x4']
 
     if args.step_offset != 0:
         if args.step_offset == -1:
@@ -110,17 +107,18 @@ def train(session, train_data_loader, test_data_loader, total_steps, train_mode)
 
         real_z   = encoder(x, session.phase, session.alpha)
         fake_x   = generator(real_z, session.phase, session.alpha)
-        fake_z   = encoder(fake_x, session.phase, session.alpha)
-        fake_cls = critic(fake_z)
+        # fake_z   = encoder(fake_x, session.phase, session.alpha)
+        # fake_cls = critic(fake_z)
+        fake_cls = critic(fake_x,session.phase, session.alpha)
 
         if (batch_count + 1) % (args.n_critic + 1) == 0:
             ###### Autoencoder update #########
             # match_x: E_x||g(e(x)) - x|| -> min_e
             err = utils.mismatch(fake_x, x, args.match_x_metric)
-            losses.append(err)
+            # losses.append(err)
             stats['x_reconstruction_error'] = err.data
 
-            wgan_G_loss =  -fake_cls.mean()
+            wgan_G_loss =  -torch.log(fake_cls).mean()
             losses.append(wgan_G_loss)
 
             loss = sum(losses)
@@ -130,7 +128,6 @@ def train(session, train_data_loader, test_data_loader, total_steps, train_mode)
             session.optimizerE.step()
             session.optimizerG.step()
             accumulate(g_running, generator)
-            # torch.cuda.empty_cache()
 
             ########################  Statistics ########################
             xr = stats['x_reconstruction_error']
@@ -142,13 +139,19 @@ def train(session, train_data_loader, test_data_loader, total_steps, train_mode)
             pbar.update(batch)
         else:
             ####### Critic update ########
-            real_cls = critic(real_z)
-            wgan_C_loss = fake_cls.mean()-real_cls.mean()
+            # real_cls = critic(real_z)
+            real_cls    = critic(x,session.phase, session.alpha)
+
+            wgan_C_loss = -torch.log(1.0-fake_cls).mean() - torch.log(real_cls).mean()
+            # wgan_C_loss = -torch.log(1.0-fake_cls).mean() - torch.log(real_cls).mean()
+
+            stats['real_cls'] = real_cls.mean().data.cpu().numpy()
+            stats['fake_cls'] = fake_cls.mean().data.cpu().numpy()
+
             losses.append(wgan_C_loss)
             loss = sum(losses)
             stats['C_loss'] = loss.data.cpu().numpy()
             loss.backward()
-            # session.optimizerE.step()
             session.optimizerC.step()
             # torch.cuda.empty_cache()
 
@@ -224,8 +227,7 @@ def main():
     # 4 modes: Train (with data/train), test (with data/test), aux-test (with custom aux_inpath), dump-training-set
     
     if args.run_mode == config.RUN_TRAIN:
-        train(session, train_data_loader, test_data_loader,
-              total_steps = args.total_kimg * 1000, train_mode = args.train_mode)
+        train(session, train_data_loader, test_data_loader, total_steps = args.total_kimg * 1000)
 
     elif args.run_mode == config.RUN_TEST:
         if args.reconstructions_N > 0 or args.interpolate_N > 0:
