@@ -21,7 +21,7 @@ def parse_args():
 
     # parser.add_argument('--KL', default='qp', help='The KL divergence direction [pq|qp]')
     parser.add_argument('--match_x_metric', default='L1', help='none|L1|L2|cos')
-    # parser.add_argument('--match_z_metric', default='cos', help='none|L1|L2|cos')
+    parser.add_argument('--match_z_metric', default='L2', help='none|L1|L2|cos')
     # parser.add_argument('--noise', default='normal', help='normal|sphere')
     parser.add_argument('--no_TB', action='store_true', help='Do not create Tensorboard logs')
     parser.add_argument('--start_iteration', type=int, default=0)

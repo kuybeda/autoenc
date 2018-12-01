@@ -10,8 +10,6 @@ import  utils
 from    torch.autograd import Variable #, grad
 from    tqdm import tqdm
 
-# import  copy
-
 args   = config.get_config()
 
 def batch_size(reso):
@@ -33,6 +31,7 @@ def batch_size(reso):
     return batch_table[reso]
 
 class Session:
+
     def __init__(self):
         # Note: 4 requirements for sampling from pre-existing models:
         # 1) Ensure you save and load both multi-gpu versions (DataParallel) or both not.

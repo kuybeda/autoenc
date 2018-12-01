@@ -23,11 +23,17 @@ def updateEG(x, encoder, generator, critic, session):
     real_z      = encoder(x, session.phase, session.alpha)
     fake_x      = generator(real_z, session.phase, session.alpha)
     fake_cls    = critic(fake_x, session.phase, session.alpha)
-    # match_x: E_x||g(e(x)) - x|| -> min_e
-    err = utils.mismatch(fake_x, x, args.match_x_metric)
-    losses.append(err)
 
-    stats['x_reconstruction_error'] = err.data
+    # match x: E_x||g(e(x)) - x|| -> min_e
+    err_x       = utils.mismatch(fake_x, x, args.match_x_metric)
+    stats['x_reconstruction_error'] = err_x.data
+    losses.append(err_x)
+
+    # cyclic match z
+    fake_z      = encoder(fake_x, session.phase, session.alpha)
+    err_z       = utils.mismatch(real_z, fake_z, args.match_z_metric)
+    losses.append(err_z)
+
     wgan_G_loss     = -torch.log(fake_cls).mean()
     losses.append(wgan_G_loss)
 
