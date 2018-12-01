@@ -11,9 +11,9 @@ from    myplotlib import show_planes,imshow,clf
 
 args = config.get_config()
 
-def tests_run(generator, encoder, test_data_loader, session, reconstruction=True):
+def tests_run(session, loader, reconstruction=True):
     if reconstruction:
-        Utils.reconstruct_images(generator, encoder, test_data_loader, session.sample_i, session)
+        Utils.reconstruct_images(session,loader)
 
     # if sampling:
     #     Utils.generate_random_samples(generator, session.sample_i, session)
@@ -23,13 +23,13 @@ class Utils:
     @staticmethod
     def reconstruct(input_image, encoder, generator, session):
         ex = encoder(input_image, session.phase, session.alpha)
-        # ex = encoder(Variable(input_image, volatile=True), session.phase, session.alpha, args.use_ALQ).detach()
         # ex, label = utils.split_labels_out_of_latent(ex)
         gex = generator(ex.detach(), session.phase, session.alpha).detach()
         return gex.data[:]
 
     @staticmethod
-    def reconstruct_images(generator, encoder, loader, global_i, session):
+    def reconstruct_images(session,loader):
+        encoder,generator = session.encoder,session.generator
         generator.eval()
         encoder.eval()
         utils.requires_grad(generator, False)
@@ -46,13 +46,13 @@ class Utils:
         out_ims     = torch.cat((input_ims,reco_ims.cpu()), 1).view(nsamples*2,1,reco_ims.shape[-2],reco_ims.shape[-1])
 
         sample_dir  = '{}/recon'.format(args.save_dir)
-        save_path   = '{}/{}.png'.format(sample_dir, str(global_i + 1).zfill(6))
+        save_path   = '{}/{}.png'.format(sample_dir, session.sample_i + 1).zfill(6)
         mkdir_assure(sample_dir)
 
         torchvision.utils.save_image(out_ims, save_path, nrow=args.test_cols, normalize=True, padding=0, scale_each=False)
 
-        utils.requires_grad(generator, True)
-        utils.requires_grad(encoder, True)
+        # utils.requires_grad(generator, True)
+        # utils.requires_grad(encoder, True)
         encoder.train()
         generator.train()
 
@@ -81,11 +81,10 @@ class Utils:
             # ex, label = utils.split_labels_out_of_latent(ex)
             gex = generator(ex, session.phase, session.alpha).detach()
 
-        utils.requires_grad(generator, True)
-        utils.requires_grad(encoder, True)
+        # utils.requires_grad(generator, True)
+        # utils.requires_grad(encoder, True)
         encoder.train()
         generator.train()
-
 
 
 ########### JUNK #################

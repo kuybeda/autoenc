@@ -3,7 +3,7 @@ from    torch import nn
 from    torch.nn import functional as F
 # import  utils
 import  config
-from    cnnutils import EqualConv2d, PixelNorm, ConvBlock, DenseBlock, Conv2dNorm
+from    cnnutils import EqualConv2d, PixelNorm, DenseBlock
 
 args   = config.get_config()
 
@@ -59,9 +59,9 @@ class Generator(nn.Module):
 
                 if i > 0 and 0 <= alpha < 1:
                     # use previous 1x1 to gray transform
-                    upsample = self.nonlin(upsample)
-                    skip_gray = self.to_gray[i - 1](upsample)
-                    out = (1 - alpha) * skip_gray + alpha * out
+                    upsample    = self.nonlin(upsample)
+                    skip_gray   = self.to_gray[i - 1](upsample)
+                    out         = (1 - alpha) * skip_gray + alpha * out
                 break
         return out
 

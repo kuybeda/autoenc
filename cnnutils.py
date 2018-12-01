@@ -186,20 +186,18 @@ class ConvBlock(nn.Module):
             kernel2 = kernel_size2
 
         if spectral_norm:
-            # assert(0)
             self.conv = nn.Sequential(SpectralNormConv2d(in_channel, out_channel, kernel1, padding=pad1),
                                       nn.LeakyReLU(0.2),
                                       SpectralNormConv2d(out_channel, out_channel, kernel2, padding=pad2),
                                       nn.LeakyReLU(0.2))
 
         elif pixel_norm:
-                # assert(0)
-                self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
-                                          PixelNorm(),
-                                          nn.LeakyReLU(0.2),
-                                          EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
-                                          PixelNorm(),
-                                          nn.LeakyReLU(0.2))
+            self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
+                                      PixelNorm(),
+                                      nn.LeakyReLU(0.2),
+                                      EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
+                                      PixelNorm(),
+                                      nn.LeakyReLU(0.2))
 
         else:
             self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
