@@ -172,8 +172,7 @@ def train(session, train_data_loader, test_data_loader, total_steps):
 
         ########################  Tests ######################## 
 
-        evaluate.tests_run(g_running, encoder, test_data_loader, session,reconstruction = (batch_count % 100 == 0))
-
+        evaluate.tests_run(generator, encoder, test_data_loader, session,reconstruction = (batch_count % 100 == 0))
 
     pbar.close()
 

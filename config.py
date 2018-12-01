@@ -80,7 +80,7 @@ def init():
     assert(args.step_offset != 0 or args.phase_offset == 0)
 
     # number of features
-    args.nz = 512
+    args.nz = 256
     args.n_critic = 1
     # number of input image channels
     args.nc = 1

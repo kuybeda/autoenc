@@ -56,7 +56,7 @@ class Session:
         print('Session created.')
 
     def cur_res(self):
-        return  8 * 2 ** self.phase
+        return  4 * 2 ** self.phase
 
     def cur_batch(self):
         return batch_size(self.cur_res())
