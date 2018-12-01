@@ -30,10 +30,6 @@ class Generator(nn.Module):
                                           DenseBlock('block9', nz//16, 4, nz // 128,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
 
-        # nn.Sequential(
-        # Conv2dNorm('conv1', nz, nz, 4, 3,
-        #            pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-
         self.to_gray = nn.ModuleList([nn.Conv2d(nz, 1, 1), #Each has 1 channel and kernel size 1x1!
                                      nn.Conv2d(nz, 1, 1),
                                      nn.Conv2d(nz, 1, 1),
@@ -101,7 +97,6 @@ class Bottleneck(nn.Module):
                                        nn.Conv2d(1, nz, 1)])
 
         self.n_layer = len(self.progression)
-        # self.nonlin  = nn.LeakyReLU(0.2)
 
     def forward(self, pool, input, step, alpha):
         for i in range(step, -1, -1):
@@ -119,8 +114,6 @@ class Bottleneck(nn.Module):
                     skip_rgb = F.avg_pool2d(input, 2)
                     skip_rgb = self.from_gray[index + 1](skip_rgb)
                     out = (1 - alpha) * skip_rgb + alpha * out
-
-        # out = self.nonlin(out)
         return out
 
 class Encoder(Bottleneck):
@@ -135,21 +128,26 @@ class Critic(Bottleneck):
     def __init__(self, nz, pixel_norm=True, spectral_norm=False):
         super().__init__(nz, pixel_norm, spectral_norm)
 
-        self.classifier  = nn.Sequential(EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
-                                         # EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
+        self.classifier  = nn.Sequential(nn.LeakyReLU(0.2), EqualConv2d(nz, nz, 3, padding=0), PixelNorm(),
                                          nn.AdaptiveAvgPool2d(1),
+                                         nn.LeakyReLU(0.2),
                                          nn.Conv2d(nz, 1, 1))
-
-        # self.classifier  = nn.Sequential(EqualConv2d(nz, nz, 1, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
-        #                                  nn.Conv2d(nz, 1, 1))
 
 
     def forward(self, input, step, alpha):
         out = super().forward(F.avg_pool2d, input, step, alpha)
         return torch.sigmoid(self.classifier(out)).squeeze(2).squeeze(2)
-        # return self.classifier(out).squeeze(2).squeeze(2)
 
 # ############# JUNK #########################
+
+        # nn.Sequential(
+        # Conv2dNorm('conv1', nz, nz, 4, 3,
+        #            pixel_norm=pixel_norm, spectral_norm=spectral_norm),
+
+        # return self.classifier(out).squeeze(2).squeeze(2)
+
+        # self.classifier  = nn.Sequential(EqualConv2d(nz, nz, 1, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
+        #                                  nn.Conv2d(nz, 1, 1))
 
                                           # nn.Sequential(
                                           # Conv2dNorm('conv1', nz, nz, 4, 0,

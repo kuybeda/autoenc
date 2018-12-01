@@ -40,7 +40,6 @@ class SpectralNorm:
         setattr(module, name, fn.compute_weight(module)[0])
 
         module.register_forward_pre_hook(fn)
-
         return fn
 
     def __call__(self, module, input):
@@ -48,12 +47,9 @@ class SpectralNorm:
         setattr(module, self.name, weight_sn)
         setattr(module, self.name + '_u', u)
 
-
 def spectral_norm(module, name='weight'):
     SpectralNorm.apply(module, name)
-
     return module
-
 
 class EqualLR:
     def __init__(self, name):
@@ -94,12 +90,12 @@ class PixelNorm(nn.Module):
     def forward(self, input):
         return input / torch.sqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
 
-
 class SpectralNormConv2d(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()
 
         conv = nn.Conv2d(*args, **kwargs)
+
         init.kaiming_normal_(conv.weight)
         conv.bias.data.zero_()
         self.conv = spectral_norm(conv)
