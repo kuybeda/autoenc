@@ -13,7 +13,7 @@ import  utils
 import  data
 import  evaluate
 from    session import Session, accumulate
-from    torch.nn import functional as F
+# from    torch.nn import functional as F
 
 import torch.backends.cudnn as cudnn
 cudnn.benchmark = True
@@ -107,15 +107,13 @@ def train(session, train_data_loader, test_data_loader, total_steps):
 
         real_z   = encoder(x, session.phase, session.alpha)
         fake_x   = generator(real_z, session.phase, session.alpha)
-        # fake_z   = encoder(fake_x, session.phase, session.alpha)
-        # fake_cls = critic(fake_z)
         fake_cls = critic(fake_x,session.phase, session.alpha)
 
         if (batch_count + 1) % (args.n_critic + 1) == 0:
             ###### Autoencoder update #########
             # match_x: E_x||g(e(x)) - x|| -> min_e
             err = utils.mismatch(fake_x, x, args.match_x_metric)
-            # losses.append(err)
+            losses.append(err)
             stats['x_reconstruction_error'] = err.data
 
             wgan_G_loss =  -torch.log(fake_cls).mean()
@@ -139,11 +137,8 @@ def train(session, train_data_loader, test_data_loader, total_steps):
             pbar.update(batch)
         else:
             ####### Critic update ########
-            # real_cls = critic(real_z)
             real_cls    = critic(x,session.phase, session.alpha)
-
             wgan_C_loss = -torch.log(1.0-fake_cls).mean() - torch.log(real_cls).mean()
-            # wgan_C_loss = -torch.log(1.0-fake_cls).mean() - torch.log(real_cls).mean()
 
             stats['real_cls'] = real_cls.mean().data.cpu().numpy()
             stats['fake_cls'] = fake_cls.mean().data.cpu().numpy()
@@ -242,6 +237,17 @@ if __name__ == '__main__':
 
 
 ########## JUNK ########################
+
+# wgan_C_loss = fake_cls.mean() - real_cls.mean()
+
+# wgan_G_loss =  -fake_cls.mean()
+
+
+# fake_z   = encoder(fake_x, session.phase, session.alpha)
+# fake_cls = critic(fake_z)
+
+# real_cls = critic(real_z)
+
 
 # import numpy as np
 # from PIL import Image

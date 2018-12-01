@@ -92,18 +92,12 @@ def init():
         args.sample_mirroring = False
         print("In test mode, sample mirroring is disabled automatically.")
 
-    # args.resize_training_data = True # If you already have the right size, skip resize ops here, e.g. using /data/celeba_3k/train/resize_128
-
-    # args.train_mode = MODE_CYCLIC
-
     if args.max_phase == -1:
         args.max_phase = 5
 
     # Due to changing batch sizes in different stages, we control the length of training by the total number of samples
     if args.total_kimg < 0:
         args.total_kimg = int(args.images_per_stage * (args.max_phase+2)/1000) #All stages once, the last stage trained twice.
-
-    # args.h5 = (args.data == 'celebaHQ')
 
     args.gpu_count = torch.cuda.device_count() # Set to 1 manually if don't want multi-GPU support
 
@@ -123,6 +117,14 @@ def get_config():
 
 
 ############ JUNK ############
+
+    # args.resize_training_data = True # If you already have the right size, skip resize ops here, e.g. using /data/celeba_3k/train/resize_128
+
+    # args.train_mode = MODE_CYCLIC
+
+
+    # args.h5 = (args.data == 'celebaHQ')
+
     # args.n_generator = 2
 
     # parser.add_argument('--use_ALQ', type=int, default=0, help='Reserved for future use')

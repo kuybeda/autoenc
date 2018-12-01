@@ -25,7 +25,7 @@ class ConvBlock(nn.Module):
             kernel2 = kernel_size2
 
         if spectral_norm:
-            assert(0)
+            # assert(0)
             self.conv = nn.Sequential(SpectralNormConv2d(in_channel, out_channel, kernel1, padding=pad1),
                                       nn.LeakyReLU(0.2),
                                       # nn.PReLU(),
@@ -57,7 +57,7 @@ class ConvBlock(nn.Module):
         return out
 
 class Generator(nn.Module):
-    def __init__(self, nz, pixel_norm=False, spectral_norm=False):
+    def __init__(self, nz, pixel_norm=False, spectral_norm=True):
         super().__init__()
 
         self.code_norm = PixelNorm()
@@ -186,21 +186,21 @@ class Critic(Bottleneck):
     def forward(self, input, step, alpha):
         out = super().forward(F.avg_pool2d, input, step, alpha)
         return torch.sigmoid(self.classifier(out)).squeeze(2).squeeze(2)
+        # return self.classifier(out).squeeze(2).squeeze(2)
+
+# ############# JUNK #########################
 
 # class Critic(nn.Module):
 #     def __init__(self, nz):
 #         super().__init__()
 #
-# self.classifier = nn.Sequential(EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
-#                                 EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
-#                                 nn.AdaptiveAvgPool2d(1),
-#                                 nn.Conv2d(nz, 1, 1))
-#
+#         self.classifier = nn.Sequential(EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
+#                                         EqualConv2d(nz, nz, 3, padding=0), PixelNorm(), nn.LeakyReLU(0.2),
+#                                         nn.AdaptiveAvgPool2d(1),
+#                                         nn.Conv2d(nz, 1, 1))
 #
 #     def forward(self, input):
 #         return torch.sigmoid(self.classifier(input).squeeze(2)).squeeze(2)
-#
-# ############# JUNK #########################
 
         # out = utils.normalize(out)
 
