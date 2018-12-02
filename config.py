@@ -94,7 +94,6 @@ def init():
     args.gpu_count = torch.cuda.device_count() # Set to 1 manually if don't want multi-GPU support
 
     print(args)
-
     print("Total training samples {}k. Max phase for dataset is {}. \
           Once the maximum phase is trained the full round, we continue \
           training that phase.".format(args.total_kimg, args.max_phase))
