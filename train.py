@@ -29,7 +29,7 @@ def updateEG(x, encoder, generator, critic, session):
     stats['x_reconstruction_error'] = err_x.data
     losses.append(err_x)
 
-    # cyclic match z
+    # cyclic match z E_x||e(g(e(x))) - e(x)||^2
     fake_z      = encoder(fake_x, session.phase, session.alpha)
     err_z       = utils.mismatch(real_z, fake_z, args.match_z_metric)
     losses.append(err_z)

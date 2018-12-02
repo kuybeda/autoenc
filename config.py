@@ -81,15 +81,8 @@ def init():
     # number of features
     args.nz = 64
     args.n_critic = 1
-    # number of input image channels
-    # args.nc = 1
 
     args.use_TB = not args.no_TB
-
-    # args.sample_mirroring = True
-    # if args.testonly:
-    #     args.sample_mirroring = False
-    #     print("In test mode, sample mirroring is disabled automatically.")
 
     if args.max_phase == -1:
         args.max_phase = 5
@@ -116,6 +109,15 @@ def get_config():
 
 
 ############ JUNK ############
+
+    # number of input image channels
+    # args.nc = 1
+
+
+    # args.sample_mirroring = True
+    # if args.testonly:
+    #     args.sample_mirroring = False
+    #     print("In test mode, sample mirroring is disabled automatically.")
 
     # args.resize_training_data = True # If you already have the right size, skip resize ops here, e.g. using /data/celeba_3k/train/resize_128
 
