@@ -67,7 +67,23 @@ def mismatch(x, y, dist):
     elif dist == 'cos':
         x_n = normalize(x)
         y_n = normalize(y)
+        ret = 2 - (x_n).mul(y_n)
+        return ret.mean(dim=1).mean()
+    else:
+        assert dist == 'none', '?'
 
+def mismatch_masked(x, y, mask, dist):
+    '''
+    Computes distance between corresponding points points in `x` and `y`
+    using distance `dist`.
+    '''
+    if dist == 'L2':
+        return ((x - y)*mask).pow(2).mean(dim=1).mean()
+    elif dist == 'L1':
+        return ((x - y)*mask).abs().mean(dim=1).mean()
+    elif dist == 'cos':
+        x_n = normalize(x)
+        y_n = normalize(y)
         ret = 2 - (x_n).mul(y_n)
         return ret.mean(dim=1).mean()
     else:

@@ -20,7 +20,6 @@ def get_loader(path):
     return loader
 
 class Utils:
-    #TODO Triple-check that image_size can be given this way instead of always calculated from session.step
     @staticmethod
     def sample_data2(dataloader, batch_size, image_size):
         transform = transforms.Compose([
@@ -32,36 +31,36 @@ class Utils:
         loader = dataloader(transform, batch_size=batch_size)
         for img, label in loader:
             yield img, label
-
-        print("Finished epoch !! ")
-
-
-def dump_training_set(loader, dump_trainingset_N, dump_trainingset_dir, session):
-    batch_size = 8
-    total = 0
-
-    phase = min(args.max_phase, session.phase)
-
-    reso = 4 * (2 ** phase)
-
-    if not os.path.exists(dump_trainingset_dir):
-        os.makedirs(dump_trainingset_dir)    
-
-    print("Dumping training data with {}x{} and alpha {}".format(reso, reso, session.alpha))
-    dataset = Utils.sample_data2(loader, batch_size, reso, session)
-
-    for i in range(int(dump_trainingset_N / batch_size) + 1):
-        curr_batch_size = min(batch_size, dump_trainingset_N - total)
-        batch, _ = next(dataset)        
-        for j in range(curr_batch_size):
-            save_path = '{}/orig_{}.png'.format(dump_trainingset_dir, total)
-            total += 1
-            grid = utils.save_image(batch[j] / 2 + 0.5, save_path, padding=0)
-        if total % 500 < batch_size:
-            print(total)
+        print("\nFinished epoch !! ")
 
 
 ######## JUNK #########
+
+# def dump_training_set(loader, dump_trainingset_N, dump_trainingset_dir, session):
+#     batch_size = 8
+#     total = 0
+#
+#     # phase = min(args.max_phase, session.phase)
+#
+#     # reso = 4 * (2 ** phase)
+#     reso = session.cur_res()
+#
+#     if not os.path.exists(dump_trainingset_dir):
+#         os.makedirs(dump_trainingset_dir)
+#
+#     print("Dumping training data with {}x{} and alpha {}".format(reso, reso, session.alpha))
+#     dataset = Utils.sample_data2(loader, batch_size, reso, session)
+#
+#     for i in range(int(dump_trainingset_N / batch_size) + 1):
+#         curr_batch_size = min(batch_size, dump_trainingset_N - total)
+#         batch, _ = next(dataset)
+#         for j in range(curr_batch_size):
+#             save_path = '{}/orig_{}.png'.format(dump_trainingset_dir, total)
+#             total += 1
+#             grid = utils.save_image(batch[j] / 2 + 0.5, save_path, padding=0)
+#         if total % 500 < batch_size:
+#             print(total)
+
 # import random
 # import  numpy as np
 # from    PIL import Image

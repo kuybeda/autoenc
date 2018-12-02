@@ -28,7 +28,7 @@ def batch_size(reso):
     else:
         assert (False)
 
-    return batch_table[reso]
+    return batch_table[reso]*2
 
 class Session:
 
@@ -44,8 +44,9 @@ class Session:
         self.phase      = args.start_phase
         self.total_steps = args.total_kimg * 1000
 
-        self.encoder    = nn.DataParallel(Encoder(nz=args.nz).cuda())
+        self.encoder    = nn.DataParallel(Encoder(args.nz).cuda())
         self.generator  = nn.DataParallel(Generator(args.nz).cuda())
+        # self.attn       = nn.DataParallel(Attention(args.nz).cuda())
         # self.g_running  = nn.DataParallel(Generator(args.nz).cuda())
         self.critic     = nn.DataParallel(Critic(args.nz).cuda())
         print("Using ", torch.cuda.device_count(), " GPUs!")
@@ -55,9 +56,6 @@ class Session:
 
     def setup(self):
         utils.make_dirs()
-        if not args.testonly:
-            config.log_args(args)
-
         random.seed(args.manual_seed)
         torch.manual_seed(args.manual_seed)
         torch.cuda.manual_seed_all(args.manual_seed)
@@ -144,13 +142,14 @@ class Session:
 
     def handle_stats(self,stats):
         #  Display Statistics
-        xr      = stats['x_reconstruction_error']
+        xr      = stats['x_error']
+        zr      = stats['z_error']
         e       = (self.sample_i / float(self.epoch_len))
         batch   = self.cur_batch()
         self.pbar.set_description(
-            ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-reco {7:.3f};').format(\
+            ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-err {7:.4f}; z-err {8:.4f};').format(\
                 self.batch_count+1, self.sample_i+1, self.phase,
-                batch, self.alpha, self.cur_res(), e, xr)
+                batch, self.alpha, self.cur_res(), e, xr, zr)
             )
         self.pbar.update(batch)
         # Write data to Tensorboard #
@@ -171,24 +170,27 @@ class Session:
         if self.batch_count % args.checkpoint_cycle == 0:
             for postfix in {'latest', str(self.sample_i).zfill(6)}:
                 self.save_all('{}/{}_state'.format(args.checkpoint_dir, postfix))
-            print("Checkpointed to {}".format(self.sample_i))
+            print("\nCheckpointed to {}".format(self.sample_i))
 
     def finish(self):
         self.pbar.close()
 
     def reset_opt(self):
         self.optimizerG = optim.Adam(self.generator.parameters(), args.lr, betas=(0.0, 0.99))
-        self.optimizerE = optim.Adam(self.encoder.parameters(), args.lr, betas=(0.0, 0.99))  # includes all the encoder parameters...
-        self.optimizerC = optim.Adam(self.critic.parameters(), args.lr, betas=(0.0, 0.99))  # includes all the encoder parameters...
+        self.optimizerE = optim.Adam(self.encoder.parameters(), args.lr, betas=(0.0, 0.99))
+        self.optimizerC = optim.Adam(self.critic.parameters(), args.lr, betas=(0.0, 0.99))
+        # self.optimizerA = optim.Adam(self.attn.parameters(), args.lr, betas=(0.0, 0.99))
 
     def save_all(self, path):
         torch.save({'G_state_dict': self.generator.state_dict(),
                     'E_state_dict': self.encoder.state_dict(),
                     'C_state_dict': self.critic.state_dict(),
+                    # 'A_state_dict': self.attn.state_dict(),
                     # 'G_running_state_dict': self.g_running.state_dict(),
                     'optimizerE': self.optimizerE.state_dict(),
                     'optimizerG': self.optimizerG.state_dict(),
                     'optimizerC': self.optimizerC.state_dict(),
+                    # 'optimizerA': self.optimizerA.state_dict(),
                     'iteration': self.sample_i,
                     'phase': self.phase,
                     'alpha': self.alpha},
@@ -202,11 +204,13 @@ class Session:
         # self.g_running.load_state_dict(checkpoint['G_running_state_dict'])
         self.encoder.load_state_dict(checkpoint['E_state_dict'])
         self.critic.load_state_dict(checkpoint['C_state_dict'])
+        # self.attn.load_state_dict(checkpoint['A_state_dict'])
 
-        if args.reset_optimizers <= 0:
+        if not args.reset_optimizers:
             self.optimizerE.load_state_dict(checkpoint['optimizerE'])
             self.optimizerG.load_state_dict(checkpoint['optimizerG'])
             self.optimizerC.load_state_dict(checkpoint['optimizerC'])
+            # self.optimizerA.load_state_dict(checkpoint['optimizerA'])
             print("Reloaded old optimizers")
         else:
             print("Despite loading the state, we reset the optimizers.")
@@ -244,15 +248,17 @@ class Session:
                 self.sample_i = args.start_iteration
                 print('Start from iteration {}'.format(self.sample_i))
 
-        # self.g_running.train(False)
+########### JUNK ############################
 
-        if args.force_alpha >= 0.0:
-            self.alpha = args.force_alpha
+        # self.g_running.train(False)
+        # if args.force_alpha >= 0.0:
+        #     self.alpha = args.force_alpha
 
         # accumulate(self.g_running, self.generator, 0)
 
+        # if not args.testonly:
+        #     config.log_args(args)
 
-########### JUNK ############################
 # def accumulate(model1, model2, decay=0.999):
 #     par1 = dict(model1.named_parameters())
 #     par2 = dict(model2.named_parameters())

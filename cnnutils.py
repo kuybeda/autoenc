@@ -91,13 +91,12 @@ class PixelNorm(nn.Module):
         return input / torch.sqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
 
 class SpectralNormConv2d(nn.Module):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, bias=True, **kwargs):
         super().__init__()
-
-        conv = nn.Conv2d(*args, **kwargs)
-
+        conv = nn.Conv2d(*args, bias=bias, **kwargs)
         init.kaiming_normal_(conv.weight)
-        conv.bias.data.zero_()
+        if bias:
+            conv.bias.data.zero_()
         self.conv = spectral_norm(conv)
 
     def forward(self, input):

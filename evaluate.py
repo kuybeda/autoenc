@@ -21,36 +21,37 @@ def tests_run(session, loader, reconstruction=True):
 class Utils:
 
     @staticmethod
-    def reconstruct(input_image, encoder, generator, session):
-        ex = encoder(input_image, session.phase, session.alpha)
-        # ex, label = utils.split_labels_out_of_latent(ex)
-        gex = generator(ex.detach(), session.phase, session.alpha).detach()
-        return gex.data[:]
+    def reconstruct(x, session):
+        encoder, generator = session.encoder, session.generator
+        real_z = encoder(x, session.phase, session.alpha)
+        fake_x = generator(real_z, session.phase, session.alpha)
+        # fake_z = encoder(fake_x, session.phase, session.alpha)
+        # mask   = attn(real_z, fake_z, session.phase, session.alpha)
+        return fake_x.data
 
     @staticmethod
     def reconstruct_images(session,loader):
         encoder,generator = session.encoder,session.generator
         generator.eval()
         encoder.eval()
+
         utils.requires_grad(generator, False)
         utils.requires_grad(encoder, False)
 
         reso        = session.cur_res()
         nsamples    = args.test_cols * args.test_rows
-
         dataset     = data.Utils.sample_data2(loader, nsamples, reso)
-
         input_ims,_ = next(dataset)
-        reco_ims    = Utils.reconstruct(input_ims, encoder, generator, session)
-        # join source and reconstructed images side by side
-        out_ims     = torch.cat((input_ims,reco_ims.cpu()), 1).view(nsamples*2,1,reco_ims.shape[-2],reco_ims.shape[-1])
+        reco_ims    = Utils.reconstruct(input_ims, session)
 
+        # join source and reconstructed images side by side
+        out_ims     = torch.cat((input_ims,reco_ims.cpu()), 1).view(2*nsamples,1,reco_ims.shape[-2],reco_ims.shape[-1])
         sample_dir  = '{}/recon'.format(args.save_dir)
         save_path   = '{}/{}.png'.format(sample_dir, session.sample_i + 1).zfill(6)
         mkdir_assure(sample_dir)
 
+        print('\nSaving a new collage ...')
         torchvision.utils.save_image(out_ims, save_path, nrow=args.test_cols, normalize=True, padding=0, scale_each=False)
-
         # utils.requires_grad(generator, True)
         # utils.requires_grad(encoder, True)
         encoder.train()
@@ -88,6 +89,16 @@ class Utils:
 
 
 ########### JUNK #################
+
+        # attn.eval()
+        # utils.requires_grad(attn, False)
+        # attn.train()
+
+    # @staticmethod
+    # def reconstruct(input_image, encoder, generator, session):
+    #     ex  = encoder(input_image, session.phase, session.alpha)
+    #     gex = generator(ex.detach(), session.phase, session.alpha).detach()
+    #     return gex.data[:]
 
     # @staticmethod
     # def generate_random_samples(generator, global_i, session):

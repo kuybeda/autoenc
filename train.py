@@ -1,18 +1,16 @@
 import  torch
-# from    torchvision import utils
-import  os
 import  config
 import  utils
-# import  data
 import  evaluate
 from    session import Session
-# from    torch.nn import functional as F
 
 import torch.backends.cudnn as cudnn
 cudnn.benchmark = True
 args     = config.get_config()
 
-def updateEG(x, encoder, generator, critic, session):
+def updateEG(x, session):
+    encoder, generator, critic = session.encoder, session.generator, session.critic
+    # attn = session.attn
     stats, losses  = {},[]
     utils.requires_grad(encoder, True)
     utils.requires_grad(generator, True)
@@ -22,31 +20,43 @@ def updateEG(x, encoder, generator, critic, session):
 
     real_z      = encoder(x, session.phase, session.alpha)
     fake_x      = generator(real_z, session.phase, session.alpha)
-    fake_cls    = critic(fake_x, session.phase, session.alpha)
 
-    # match x: E_x||g(e(x)) - x|| -> min_e
-    err_x       = utils.mismatch(fake_x, x, args.match_x_metric)
-    stats['x_reconstruction_error'] = err_x.data
-    losses.append(err_x)
+    # use no gradient propagation if no x metric is required
+    if args.use_x_metric:
+        # match x: E_x||g(e(x)) - x|| -> min_e
+        err_x   = utils.mismatch(fake_x, x, args.match_x_metric)
+        losses.append(err_x)
+    else:
+        with torch.no_grad():
+            err_x = utils.mismatch(fake_x, x, args.match_x_metric)
 
-    # cyclic match z E_x||e(g(e(x))) - e(x)||^2
-    fake_z      = encoder(fake_x, session.phase, session.alpha)
-    err_z       = utils.mismatch(real_z, fake_z, args.match_z_metric)
-    losses.append(err_z)
+    if args.use_z_metric:
+        # cyclic match z E_x||e(g(e(x))) - e(x)||^2
+        fake_z = encoder(fake_x, session.phase, session.alpha)
+        err_z  = utils.mismatch(real_z, fake_z, args.match_z_metric)
+        losses.append(err_z)
+    else:
+        with torch.no_grad():
+            fake_z = encoder(fake_x, session.phase, session.alpha)
+            err_z  = utils.mismatch(real_z, fake_z, args.match_z_metric)
 
-    wgan_G_loss     = -torch.log(fake_cls).mean()
-    losses.append(wgan_G_loss)
+    fake_cls   = critic(fake_x, x, session.phase, session.alpha)
+    # gan_G_loss = -torch.log(fake_cls).mean()
+    gan_G_loss = -fake_cls.mean()
+    losses.append(gan_G_loss)
 
-    loss = sum(losses)
-    stats['G_loss'] = loss.data.cpu().numpy()
-    loss.backward()
+    G_loss = sum(losses)
+    stats['x_error'] = err_x.data
+    stats['z_error'] = err_z.data
+    stats['G_loss']  = G_loss.data
+    G_loss.backward()
 
     session.optimizerE.step()
     session.optimizerG.step()
-    # accumulate(g_running, generator)
     return stats
 
-def updateC(x, encoder, generator, critic, session):
+def updateC(x, session):
+    encoder, generator, critic = session.encoder, session.generator, session.critic
     stats, losses  = {},[]
     utils.requires_grad(encoder, False)
     utils.requires_grad(generator, False)
@@ -54,34 +64,39 @@ def updateC(x, encoder, generator, critic, session):
     critic.zero_grad()
 
     real_z      = encoder(x, session.phase, session.alpha)
+    # attention mask selects discriminator roi
     fake_x      = generator(real_z, session.phase, session.alpha)
-    fake_cls    = critic(fake_x, session.phase, session.alpha)
-    real_cls    = critic(x, session.phase, session.alpha)
-    wgan_C_loss = -torch.log(1.0 - fake_cls).mean() - torch.log(real_cls).mean()
 
-    stats['real_cls'] = real_cls.mean().data.cpu().numpy()
-    stats['fake_cls'] = fake_cls.mean().data.cpu().numpy()
+    fake_cls    = critic(fake_x, x, session.phase, session.alpha)
+    real_cls    = critic(x, x, session.phase, session.alpha)
+    # gan_C_loss  = -torch.log(1.0 - fake_cls).mean() - torch.log(real_cls).mean()
+    fake_cls    = fake_cls.mean()
+    real_cls    = real_cls.mean()
 
-    losses.append(wgan_C_loss)
+    gan_C_loss  = fake_cls - real_cls + (fake_cls+real_cls)**2
+
+    stats['real_cls'] = real_cls.data
+    stats['fake_cls'] = fake_cls.data
+
+    losses.append(gan_C_loss)
     loss = sum(losses)
-    stats['C_loss'] = loss.data.cpu().numpy()
+    stats['C_loss'] = loss.data
     loss.backward()
     session.optimizerC.step()
     return stats
 
 def train(session):
-    encoder,generator,critic = session.encoder,session.generator,session.critic
     # init progress bar and tensorboard statistics
     session.init_stats()
     # decide initial phase, alpha, etc
     session.init_phase()
 
     while session.sample_i < session.total_steps:
+        # get data
         x     = session.get_next_batch()
-
         # update networks
-        stats = updateEG(x, encoder, generator, critic, session)
-        stats.update(updateC(x, encoder, generator, critic, session))
+        stats = updateEG(x, session)
+        stats.update(updateC(x, session))
 
         # show and save statistics to tensorboard
         session.handle_stats(stats)
@@ -100,14 +115,30 @@ def main():
     session.load_checkpoint()
 
     print('PyTorch {}'.format(torch.__version__))
-    if args.run_mode == config.RUN_TRAIN:
-        train(session)
+    train(session)
 
 if __name__ == '__main__':
     main()
 
 
 ########## JUNK ########################
+    # utils.requires_grad(attn, False)
+    # accumulate(g_running, generator)
+    # utils.requires_grad(attn, True)
+    # attn.zero_grad()
+    # if args.run_mode == config.RUN_TRAIN:
+
+    # mask        = attn(real_z, fake_z, session.phase, session.alpha)
+    # err_x       = utils.mismatch_masked(fake_x, x, mask, args.match_x_metric)
+    # fake_z      = encoder(fake_x, session.phase, session.alpha)
+    # mask        = attn(real_z, fake_z, session.phase, session.alpha)
+    # fake_x_mask = fake_x*mask
+    # x_mask      = x*mask
+
+
+# from    torch.nn import functional as F
+# from    torchvision import utils
+# import  os
 
     # pbar = tqdm(initial=session.sample_i, total = total_steps)
     # train_dataset   = data.Utils.sample_data2(train_data_loader, session.cur_batch(), session.cur_res())
