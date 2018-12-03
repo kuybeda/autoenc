@@ -98,16 +98,6 @@ class Bottleneck(nn.Module):
                                           DenseBlock('block9', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
 
-        # self.from_gray = nn.ModuleList([nn.Conv2d(in_channels, int(nz/32), 1),
-        #                                nn.Conv2d(in_channels, int(nz/16), 1),
-        #                                nn.Conv2d(in_channels, int(nz/8), 1),
-        #                                nn.Conv2d(in_channels, int(nz/4), 1),
-        #                                nn.Conv2d(in_channels, int(nz/2), 1),
-        #                                nn.Conv2d(in_channels, nz, 1),
-        #                                nn.Conv2d(in_channels, nz, 1),
-        #                                nn.Conv2d(in_channels, nz, 1),
-        #                                nn.Conv2d(in_channels, nz, 1)])
-
         self.from_gray = nn.ModuleList([EqualConv2d(in_channels,nz // 32,1,1),
                                         EqualConv2d(in_channels, nz // 16, 1, 1),
                                         EqualConv2d(in_channels, nz // 8, 1, 1),
@@ -120,22 +110,20 @@ class Bottleneck(nn.Module):
 
         self.n_layer = len(self.progression)
 
-    def forward(self, pool, input, step, alpha):
-        for i in range(step, -1, -1):
+    def forward(self, pool, input, phase, alpha):
+        for i in range(phase, -1, -1):
             index = self.n_layer - i - 1
 
-            if i == step:
+            if i == phase:
                 out = self.from_gray[index](input)
 
             out = self.progression[index](out)
-
             if i > 0:
                 out = F.avg_pool2d(out, 2)
-
-                if i == step and 0 <= alpha < 1:
-                    skip_rgb = F.avg_pool2d(input, 2)
-                    skip_rgb = self.from_gray[index + 1](skip_rgb)
-                    out = (1 - alpha) * skip_rgb + alpha * out
+                if i == phase and 0 <= alpha < 1:
+                    skip     = F.avg_pool2d(input, 2)
+                    skip    = self.from_gray[index + 1](skip)
+                    out = (1 - alpha) * skip + alpha * out
         return out
 
 class Encoder(Bottleneck):
@@ -163,6 +151,17 @@ class Critic(Bottleneck):
         return self.classifier(out).squeeze(2).squeeze(2)
 
 # ############# JUNK #########################
+
+        # self.from_gray = nn.ModuleList([nn.Conv2d(in_channels, int(nz/32), 1),
+        #                                nn.Conv2d(in_channels, int(nz/16), 1),
+        #                                nn.Conv2d(in_channels, int(nz/8), 1),
+        #                                nn.Conv2d(in_channels, int(nz/4), 1),
+        #                                nn.Conv2d(in_channels, int(nz/2), 1),
+        #                                nn.Conv2d(in_channels, nz, 1),
+        #                                nn.Conv2d(in_channels, nz, 1),
+        #                                nn.Conv2d(in_channels, nz, 1),
+        #                                nn.Conv2d(in_channels, nz, 1)])
+
 
         # # same as encoder with detection layer
         # self.classifier  = nn.Sequential(nn.LeakyReLU(0.2),

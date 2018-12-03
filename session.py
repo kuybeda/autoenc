@@ -130,7 +130,8 @@ class Session:
         self.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage)
 
     def init_train_dataset(self):
-        self.train_dataset = data.Utils.sample_data2(self.train_data_loader, self)
+        batch, alpha, res, phase = self.cur_batch(), self.alpha, self.cur_res(), self.phase
+        self.train_dataset = data.Utils.sample_data2(self.train_data_loader, batch, alpha, res, phase )
 
 
     def get_next_batch(self):
@@ -138,7 +139,8 @@ class Session:
             real_image, _ = next(self.train_dataset)
         except (OSError, StopIteration):
             # restart dataset if epoch ended
-            train_dataset = data.Utils.sample_data2(self.train_data_loader, self)
+            batch, alpha, res, phase = self.cur_batch(), self.alpha, self.cur_res(), self.phase
+            train_dataset = data.Utils.sample_data2(self.train_data_loader, batch, alpha, res, phase)
             real_image, _ = next(train_dataset)
         return Variable(real_image).cuda(async=(args.gpu_count > 1))
 

@@ -23,8 +23,7 @@ def get_loader(path):
 
 class Utils:
     @staticmethod
-    def sample_data2(dataloader, session):
-        batch, alpha, res, phase = session.cur_batch(), session.alpha, session.cur_res(), session.phase
+    def sample_data2(dataloader, batch, alpha, res, phase):
         transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize(res),
@@ -41,7 +40,7 @@ class Utils:
                     # Downsample
                     transforms.Resize(res // 2),
                     # Upsample with linear interpolation
-                    transforms.Resize(res, interpolation=Image.LINEAR),
+                    transforms.Resize(res, interpolation=Image.BILINEAR), #Image.NEAREST
                     transforms.ToTensor(),
                 ])
                 img_prev  = torch.stack([transform_prev(im[0][...,None].numpy()) for im in img])

@@ -9,18 +9,31 @@ import  torch.backends.cudnn as cudnn
 cudnn.benchmark = True
 args     = config.get_config()
 
-def get_grad_penalty(critic, x, fake_x, batch, phase, alpha):
+def critic_grad_penalty(critic, x, fake_x, batch, phase, alpha, grad_norm):
     eps     = torch.rand(batch, 1, 1, 1).cuda()
     x_hat   = eps * x.data + (1 - eps) * fake_x.data
     x_hat   = Variable(x_hat, requires_grad=True)
     hat_predict = critic(x_hat, x, phase, alpha)
     grad_x_hat  = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
     # Push the gradients of the interpolated samples towards 1
-    grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - 1)**2).mean()
+    grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - grad_norm)**2).mean()
     return grad_penalty
+
+def autoenc_grad_norm(encoder, generator, x, phase, alpha):
+    # eps     = torch.rand(batch, 1, 1, 1).cuda()
+    # x_hat   = eps * x.data + (1 - eps) * fake_x.data
+    x_hat        = Variable(x, requires_grad=True)
+    z_hat        = encoder(x_hat, phase, alpha)
+    fake_x_hat   = generator(z_hat, phase, alpha)
+    err_x_hat    = utils.mismatch(fake_x_hat, x_hat, args.match_x_metric)
+    grad_x_hat   = grad(outputs=err_x_hat.sum(), inputs=x_hat, create_graph=True)[0]
+    grad_norm    = grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1)
+    # grad_penalty = ((grad_norm - 1)**2).mean()
+    return grad_norm
 
 def updateModels(x, session):
     encoder, generator, critic = session.encoder, session.generator, session.critic
+    batch,alpha,phase = session.cur_batch(), session.alpha, session.phase
     stats, losses  = {},[]
     utils.requires_grad(encoder, True)
     utils.requires_grad(generator, True)
@@ -28,14 +41,17 @@ def updateModels(x, session):
     encoder.zero_grad()
     generator.zero_grad()
 
-    real_z      = encoder(x, session.phase, session.alpha)
-    fake_x      = generator(real_z, session.phase, session.alpha)
+    real_z      = encoder(x, phase, alpha)
+    fake_x      = generator(real_z, phase, alpha)
 
     # use no gradient propagation if no x metric is required
     if args.use_x_metric:
         # match x: E_x||g(e(x)) - x|| -> min_e
         err_x   = utils.mismatch(fake_x, x, args.match_x_metric)
         losses.append(err_x)
+        # grad_loss = autoenc_grad_penalty(encoder, generator, x, phase, alpha)
+        # losses.append(100.0*grad_loss)
+        # stats['autoenc_grad'] = grad_loss.data
     else:
         with torch.no_grad():
             err_x = utils.mismatch(fake_x, x, args.match_x_metric)
@@ -43,8 +59,8 @@ def updateModels(x, session):
 
     if args.use_z_metric:
         # cyclic match z E_x||e(g(e(x))) - e(x)||^2
-        fake_z = encoder(fake_x, session.phase, session.alpha)
-        err_z  = utils.mismatch(real_z, fake_z, args.match_z_metric)
+        fake_z    = encoder(fake_x, phase, session.alpha)
+        err_z     = utils.mismatch(real_z, fake_z, args.match_z_metric)
         losses.append(err_z)
     else:
         with torch.no_grad():
@@ -55,6 +71,8 @@ def updateModels(x, session):
     cls_fake   = critic(fake_x, x, session.phase, session.alpha)
 
     cls_real   = critic(x, x, session.phase, session.alpha)
+
+    # measure loss only where real score is highre than fake score
     G_loss     = -(cls_fake*(cls_real.detach() > cls_fake.detach()).float()).mean()
 
     # Gloss      = -torch.log(cls_fake).mean()
@@ -73,6 +91,8 @@ def updateModels(x, session):
     ###### Critic ########
     losses = []
     utils.requires_grad(critic, True)
+    utils.requires_grad(encoder, False)
+    utils.requires_grad(generator, False)
     critic.zero_grad()
     # Use fake_x, as fixed data here
     fake_x      = fake_x.detach()
@@ -83,7 +103,8 @@ def updateModels(x, session):
     cf,cr       = cls_fake.mean(), cls_real.mean()
     C_loss      = cf - cr + torch.abs(cf + cr)
 
-    grad_loss   = get_grad_penalty(critic, x, fake_x, session.cur_batch(), session.phase, session.alpha)
+    grad_norm   = autoenc_grad_norm(encoder, generator, x, phase, alpha).mean()
+    grad_loss   = critic_grad_penalty(critic, x, fake_x, batch, phase, alpha, grad_norm)
     stats['grad_loss']  = grad_loss.data
     losses.append(grad_loss)
 

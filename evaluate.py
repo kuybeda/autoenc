@@ -32,6 +32,7 @@ class Utils:
     @staticmethod
     def reconstruct_images(session,loader):
         encoder,generator = session.encoder,session.generator
+        batch, alpha, res, phase = session.cur_batch(), session.alpha, session.cur_res(), session.phase
         generator.eval()
         encoder.eval()
 
@@ -39,7 +40,7 @@ class Utils:
         utils.requires_grad(encoder, False)
 
         nsamples    = args.test_cols * args.test_rows
-        dataset     = data.Utils.sample_data2(loader, nsamples, session.cur_res(), session.alpha)
+        dataset     = data.Utils.sample_data2(loader, nsamples, alpha, res, phase)
         input_ims,_ = next(dataset)
         reco_ims    = Utils.reconstruct(input_ims, session)
 

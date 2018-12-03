@@ -125,12 +125,12 @@ class Conv2dNorm(nn.Sequential):
         if spectral_norm:
             self.add_module('conv', SpectralNormConv2d(in_channels, out_channels,
                                                        kernel_size=kernel_size, padding=padding, bias=bias))
-        elif pixel_norm:
+        else:
             self.add_module('conv', EqualConv2d(in_channels, out_channels,
                                                 kernel_size=kernel_size, padding=padding, bias=bias))
+        if pixel_norm:
             self.add_module('norm', PixelNorm())
-        else:
-            assert(0)
+
     def forward(self, x):
         return super().forward(x)
 
@@ -139,8 +139,12 @@ class DenseLayer(nn.Sequential):
         super().__init__()
         self.g_name = name
         self.add_module('nonlin', nn.LeakyReLU(0.2))
-        self.add_module('conv', Conv2dNorm('',in_channels, growth_rate, 3, padding=1, bias=bias,
-                                            pixel_norm=pixel_norm, spectral_norm=spectral_norm))
+
+        # self.add_module('conv', Conv2dNorm('',in_channels, growth_rate, 3, padding=1, bias=bias,
+        #                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm))
+
+        self.add_module('conv', EqualConv2d('', in_channels, growth_rate, 3, padding=1, bias=bias))
+
     def forward(self, x):
         return super().forward(x)
 
