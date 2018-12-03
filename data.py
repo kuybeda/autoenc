@@ -1,7 +1,9 @@
-import  os
+# import  os
+import  torch
 from    torchvision import datasets, transforms, utils
 from    torch.utils.data import DataLoader
 import  mrcfile
+from    PIL import Image
 from    myplotlib import show_planes,imshow,clf
 import config
 
@@ -21,16 +23,31 @@ def get_loader(path):
 
 class Utils:
     @staticmethod
-    def sample_data2(dataloader, batch_size, image_size):
+    def sample_data2(dataloader, session):
+        batch, alpha, res, phase = session.cur_batch(), session.alpha, session.cur_res(), session.phase
         transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize(image_size),
+            transforms.Resize(res),
             transforms.ToTensor(),
         ])
 
-        loader = dataloader(transform, batch_size=batch_size)
+        loader = dataloader(transform, batch_size=batch)
         for img, label in loader:
-            yield img, label
+            if alpha == 1.0 or phase == 0:
+                yield img, label
+            else:
+                transform_prev = transforms.Compose([
+                    transforms.ToPILImage(mode='F'),
+                    # Downsample
+                    transforms.Resize(res // 2),
+                    # Upsample with linear interpolation
+                    transforms.Resize(res, interpolation=Image.LINEAR),
+                    transforms.ToTensor(),
+                ])
+                img_prev  = torch.stack([transform_prev(im[0][...,None].numpy()) for im in img])
+                mixed_img = img * alpha + (1.0-alpha)*img_prev
+                yield mixed_img, label
+
         print("\nFinished epoch !! ")
 
 

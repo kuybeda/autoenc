@@ -38,9 +38,8 @@ class Utils:
         utils.requires_grad(generator, False)
         utils.requires_grad(encoder, False)
 
-        reso        = session.cur_res()
         nsamples    = args.test_cols * args.test_rows
-        dataset     = data.Utils.sample_data2(loader, nsamples, reso)
+        dataset     = data.Utils.sample_data2(loader, nsamples, session.cur_res(), session.alpha)
         input_ims,_ = next(dataset)
         reco_ims    = Utils.reconstruct(input_ims, session)
 

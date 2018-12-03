@@ -31,6 +31,16 @@ class Generator(nn.Module):
                                           DenseBlock('block9', nz//16, mxgrow//16, nz // (2*mxgrow),
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
 
+        # self.to_gray = nn.ModuleList([nn.Conv2d(nz, 1, 1), #Each has 1 channel and kernel size 1x1!
+        #                              nn.Conv2d(nz, 1, 1),
+        #                              nn.Conv2d(nz, 1, 1),
+        #                              nn.Conv2d(nz, 1, 1),
+        #                              nn.Conv2d(int(nz/2), 1, 1),
+        #                              nn.Conv2d(int(nz/4), 1, 1),
+        #                              nn.Conv2d(int(nz/8), 1, 1),
+        #                              nn.Conv2d(int(nz/16), 1, 1),
+        #                              nn.Conv2d(int(nz/32), 1, 1)])
+
         self.to_gray = nn.ModuleList([EqualConv2d(nz, 1, 1), #Each has 1 channel and kernel size 1x1!
                                       EqualConv2d(nz, 1, 1),
                                       EqualConv2d(nz, 1, 1),
@@ -66,7 +76,7 @@ class Generator(nn.Module):
         return out
 
 class Bottleneck(nn.Module):
-    def __init__(self, nz, in_channels=1, pixel_norm=True, spectral_norm=False):
+    def __init__(self, nz, in_channels, pixel_norm, spectral_norm):
         super().__init__()
         mxgrow = 16
         self.progression = nn.ModuleList([DenseBlock('block1', nz//32, mxgrow//8, nz // (2*mxgrow),
@@ -87,6 +97,16 @@ class Bottleneck(nn.Module):
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm),
                                           DenseBlock('block9', nz, mxgrow, nz // mxgrow,
                                                      pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
+
+        # self.from_gray = nn.ModuleList([nn.Conv2d(in_channels, int(nz/32), 1),
+        #                                nn.Conv2d(in_channels, int(nz/16), 1),
+        #                                nn.Conv2d(in_channels, int(nz/8), 1),
+        #                                nn.Conv2d(in_channels, int(nz/4), 1),
+        #                                nn.Conv2d(in_channels, int(nz/2), 1),
+        #                                nn.Conv2d(in_channels, nz, 1),
+        #                                nn.Conv2d(in_channels, nz, 1),
+        #                                nn.Conv2d(in_channels, nz, 1),
+        #                                nn.Conv2d(in_channels, nz, 1)])
 
         self.from_gray = nn.ModuleList([EqualConv2d(in_channels,nz // 32,1,1),
                                         EqualConv2d(in_channels, nz // 16, 1, 1),
@@ -129,7 +149,22 @@ class Encoder(Bottleneck):
 class Critic(Bottleneck):
     def __init__(self, nz, pixel_norm=False, spectral_norm=True):
         super().__init__(nz, 2, pixel_norm, spectral_norm)
-        # same as encoder with detection layer
+        self.classifier  = nn.Sequential(nn.LeakyReLU(0.2),
+                                         SpectralNormConv2d(nz, nz, 3),
+                                         nn.LeakyReLU(0.2),
+                                         nn.AdaptiveAvgPool2d(1),
+                                         SpectralNormConv2d(nz, 1, 1,bias=False))
+
+    def forward(self, input1, input2, step, alpha):
+        # input = input1
+        input = torch.cat((input1,input2),dim=1)
+        out   = super().forward(F.avg_pool2d, input, step, alpha)
+        # return torch.sigmoid(self.classifier(out)).squeeze(2).squeeze(2)
+        return self.classifier(out).squeeze(2).squeeze(2)
+
+# ############# JUNK #########################
+
+        # # same as encoder with detection layer
         # self.classifier  = nn.Sequential(nn.LeakyReLU(0.2),
         #                                  EqualConv2d(nz, nz, 3),
         #                                  PixelNorm(),
@@ -137,20 +172,6 @@ class Critic(Bottleneck):
         #                                  nn.AdaptiveAvgPool2d(1),
         #                                  EqualConv2d(nz, 1, 1))
 
-        self.classifier  = nn.Sequential(nn.LeakyReLU(0.2),
-                                         SpectralNormConv2d(nz, nz, 3),
-                                         nn.LeakyReLU(0.2),
-                                         nn.AdaptiveAvgPool2d(1),
-                                         nn.LeakyReLU(0.2),
-                                         SpectralNormConv2d(nz, 1, 1,bias=False))
-
-    def forward(self, input1,input2, step, alpha):
-        input = torch.cat((input1,input2),dim=1)
-        out   = super().forward(F.avg_pool2d, input, step, alpha)
-        # return torch.sigmoid(self.classifier(out)).squeeze(2).squeeze(2)
-        return self.classifier(out).squeeze(2).squeeze(2)
-
-# ############# JUNK #########################
 
 # class Attention(Generator):
 #     ''' Mask generator that focuses on best discrepancy region '''
@@ -171,27 +192,6 @@ class Critic(Bottleneck):
         # normalize max value to 1
         # mx,_ = mask.max(dim=-2,keepdim=True)
         # mx,_ = mx.max(dim=-1,keepdim=True)
-
-        # self.from_gray = nn.ModuleList([nn.Conv2d(1, int(nz/32), 1),
-        #                                nn.Conv2d(1, int(nz/16), 1),
-        #                                nn.Conv2d(1, int(nz/8), 1),
-        #                                nn.Conv2d(1, int(nz/4), 1),
-        #                                nn.Conv2d(1, int(nz/2), 1),
-        #                                nn.Conv2d(1, nz, 1),
-        #                                nn.Conv2d(1, nz, 1),
-        #                                nn.Conv2d(1, nz, 1),
-        #                                nn.Conv2d(1, nz, 1)])
-
-        # self.to_gray = nn.ModuleList([nn.Conv2d(nz, 1, 1), #Each has 1 channel and kernel size 1x1!
-        #                              nn.Conv2d(nz, 1, 1),
-        #                              nn.Conv2d(nz, 1, 1),
-        #                              nn.Conv2d(nz, 1, 1),
-        #                              nn.Conv2d(int(nz/2), 1, 1),
-        #                              nn.Conv2d(int(nz/4), 1, 1),
-        #                              nn.Conv2d(int(nz/8), 1, 1),
-        #                              nn.Conv2d(int(nz/16), 1, 1),
-        #                              nn.Conv2d(int(nz/32), 1, 1)])
-
 
         # nn.Sequential(
         # Conv2dNorm('conv1', nz, nz, 4, 3,

@@ -97,18 +97,21 @@ class SpectralNormConv2d(nn.Module):
         init.kaiming_normal_(conv.weight)
         if bias:
             conv.bias.data.zero_()
-        self.conv = spectral_norm(conv)
+        self.conv   = spectral_norm(conv)
+        # self.pnorm  = PixelNorm()
 
     def forward(self, input):
-        return self.conv(input)
+        out = self.conv(input)
+        return out #self.pnorm(out)
 
 class EqualConv2d(nn.Module):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, bias=True, **kwargs):
         super().__init__()
 
         conv = nn.Conv2d(*args, **kwargs)
         conv.weight.data.normal_()
-        conv.bias.data.zero_()
+        if bias:
+            conv.bias.data.zero_()
         self.conv = equal_lr(conv)
 
     def forward(self, input):

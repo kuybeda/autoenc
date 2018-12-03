@@ -68,7 +68,7 @@ def mismatch(x, y, dist):
         x_n = normalize(x)
         y_n = normalize(y)
         ret = 2 - (x_n).mul(y_n)
-        return ret.mean(dim=1).mean()
+        return ret.mean() #ret.mean(dim=1).mean()
     else:
         assert dist == 'none', '?'
 

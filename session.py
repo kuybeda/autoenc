@@ -40,6 +40,7 @@ class Session:
         # 4) You may need to warm up the g_running by running evaluate.reconstruction_dryrun() first
 
         self.alpha      = -1
+        self.kt         = 0.0
         self.sample_i   = min(args.start_iteration, 0)
         self.phase      = args.start_phase
         self.total_steps = args.total_kimg * 1000
@@ -108,6 +109,7 @@ class Session:
             print("Step offset is {}".format(args.step_offset))
             self.phase += args.phase_offset
             self.alpha = 0.0
+            self.kt    = 0.0
         self.init_train_dataset()
         self.update_phase()
 
@@ -128,7 +130,7 @@ class Session:
         self.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage)
 
     def init_train_dataset(self):
-        self.train_dataset = data.Utils.sample_data2(self.train_data_loader, self.cur_batch(), self.cur_res())
+        self.train_dataset = data.Utils.sample_data2(self.train_data_loader, self)
 
 
     def get_next_batch(self):
@@ -136,14 +138,14 @@ class Session:
             real_image, _ = next(self.train_dataset)
         except (OSError, StopIteration):
             # restart dataset if epoch ended
-            train_dataset = data.Utils.sample_data2(self.train_data_loader, self.cur_batch(), self.cur_res())
+            train_dataset = data.Utils.sample_data2(self.train_data_loader, self)
             real_image, _ = next(train_dataset)
         return Variable(real_image).cuda(async=(args.gpu_count > 1))
 
     def handle_stats(self,stats):
         #  Display Statistics
-        xr      = stats['x_error']
-        zr      = stats['z_error']
+        xr      = stats['x_err']
+        zr      = stats['z_err']
         e       = (self.sample_i / float(self.epoch_len))
         batch   = self.cur_batch()
         self.pbar.set_description(
@@ -176,10 +178,9 @@ class Session:
         self.pbar.close()
 
     def reset_opt(self):
-        self.optimizerG = optim.Adam(self.generator.parameters(), args.lr, betas=(0.0, 0.99))
-        self.optimizerE = optim.Adam(self.encoder.parameters(), args.lr, betas=(0.0, 0.99))
-        self.optimizerC = optim.Adam(self.critic.parameters(), args.lr, betas=(0.0, 0.99))
-        # self.optimizerA = optim.Adam(self.attn.parameters(), args.lr, betas=(0.0, 0.99))
+        self.optimizerG = optim.Adam(self.generator.parameters(), args.EGlr, betas=(0.0, 0.99))
+        self.optimizerE = optim.Adam(self.encoder.parameters(), args.EGlr, betas=(0.0, 0.99))
+        self.optimizerC = optim.Adam(self.critic.parameters(), args.Clr, betas=(0.0, 0.99))
 
     def save_all(self, path):
         torch.save({'G_state_dict': self.generator.state_dict(),
@@ -193,7 +194,8 @@ class Session:
                     # 'optimizerA': self.optimizerA.state_dict(),
                     'iteration': self.sample_i,
                     'phase': self.phase,
-                    'alpha': self.alpha},
+                    'alpha': self.alpha,
+                    'kt': self.kt},
                    path)
 
     def load(self, path):
@@ -216,6 +218,7 @@ class Session:
             print("Despite loading the state, we reset the optimizers.")
 
         self.alpha = checkpoint['alpha']
+        self.kt    = checkpoint['kt']
         self.phase = int(checkpoint['phase'])
         if args.start_phase > 0:  # If the start phase has been manually set, try to actually use it (e.g. when have trained 64x64 for extra rounds and then turning the model over to 128x128)
             self.phase = min(args.start_phase, self.phase)
@@ -227,11 +230,11 @@ class Session:
     def create(self):
         if args.start_iteration <= 0:
             args.start_iteration = 1
-            if args.no_progression:
-                self.sample_i = args.start_iteration = int((args.max_phase + 0.5) * args.images_per_stage)  # Start after the fade-in stage of the last iteration
-                args.force_alpha = 1.0
-                print("Progressive growth disabled. Setting start step = {} and alpha = {}".format(args.start_iteration,
-                                                                                                   args.force_alpha))
+            # if args.no_progression:
+            #     self.sample_i = args.start_iteration = int((args.max_phase + 0.5) * args.images_per_stage)  # Start after the fade-in stage of the last iteration
+            #     args.force_alpha = 1.0
+            #     print("Progressive growth disabled. Setting start step = {} and alpha = {}".format(args.start_iteration,
+            #                                                                                        args.force_alpha))
         else:
             reload_from = '{}/checkpoint/{}_state'.format(args.save_dir, str(args.start_iteration).zfill(
                 6))  # e.g. '604000' #'600000' #latest'

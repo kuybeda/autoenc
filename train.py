@@ -3,14 +3,24 @@ import  config
 import  utils
 import  evaluate
 from    session import Session
+from    torch.autograd import Variable, grad
 
-import torch.backends.cudnn as cudnn
+import  torch.backends.cudnn as cudnn
 cudnn.benchmark = True
 args     = config.get_config()
 
-def updateEG(x, session):
+def get_grad_penalty(critic, x, fake_x, batch, phase, alpha):
+    eps     = torch.rand(batch, 1, 1, 1).cuda()
+    x_hat   = eps * x.data + (1 - eps) * fake_x.data
+    x_hat   = Variable(x_hat, requires_grad=True)
+    hat_predict = critic(x_hat, x, phase, alpha)
+    grad_x_hat  = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
+    # Push the gradients of the interpolated samples towards 1
+    grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - 1)**2).mean()
+    return grad_penalty
+
+def updateModels(x, session):
     encoder, generator, critic = session.encoder, session.generator, session.critic
-    # attn = session.attn
     stats, losses  = {},[]
     utils.requires_grad(encoder, True)
     utils.requires_grad(generator, True)
@@ -29,6 +39,7 @@ def updateEG(x, session):
     else:
         with torch.no_grad():
             err_x = utils.mismatch(fake_x, x, args.match_x_metric)
+    stats['x_err'] = err_x.data
 
     if args.use_z_metric:
         # cyclic match z E_x||e(g(e(x))) - e(x)||^2
@@ -39,50 +50,57 @@ def updateEG(x, session):
         with torch.no_grad():
             fake_z = encoder(fake_x, session.phase, session.alpha)
             err_z  = utils.mismatch(real_z, fake_z, args.match_z_metric)
+    stats['z_err'] = err_z.data
 
-    fake_cls   = critic(fake_x, x, session.phase, session.alpha)
-    # gan_G_loss = -torch.log(fake_cls).mean()
-    gan_G_loss = -fake_cls.mean()
-    losses.append(gan_G_loss)
+    cls_fake   = critic(fake_x, x, session.phase, session.alpha)
 
-    G_loss = sum(losses)
-    stats['x_error'] = err_x.data
-    stats['z_error'] = err_z.data
+    cls_real   = critic(x, x, session.phase, session.alpha)
+    G_loss     = -(cls_fake*(cls_real.detach() > cls_fake.detach()).float()).mean()
+
+    # Gloss      = -torch.log(cls_fake).mean()
     stats['G_loss']  = G_loss.data
-    G_loss.backward()
+    # warm up critic loss to kick in with alpha
+    losses.append(session.alpha*G_loss)
 
+    # Propagate gradients for encoder and decoder
+    loss = sum(losses)
+    loss.backward()
+
+    # Apply encoder and decoder gradients
     session.optimizerE.step()
     session.optimizerG.step()
-    return stats
 
-def updateC(x, session):
-    encoder, generator, critic = session.encoder, session.generator, session.critic
-    stats, losses  = {},[]
-    utils.requires_grad(encoder, False)
-    utils.requires_grad(generator, False)
+    ###### Critic ########
+    losses = []
     utils.requires_grad(critic, True)
     critic.zero_grad()
+    # Use fake_x, as fixed data here
+    fake_x      = fake_x.detach()
 
-    real_z      = encoder(x, session.phase, session.alpha)
-    # attention mask selects discriminator roi
-    fake_x      = generator(real_z, session.phase, session.alpha)
+    cls_fake    = critic(fake_x, x, session.phase, session.alpha)
+    cls_real    = critic(x, x, session.phase, session.alpha)
 
-    fake_cls    = critic(fake_x, x, session.phase, session.alpha)
-    real_cls    = critic(x, x, session.phase, session.alpha)
-    # gan_C_loss  = -torch.log(1.0 - fake_cls).mean() - torch.log(real_cls).mean()
-    fake_cls    = fake_cls.mean()
-    real_cls    = real_cls.mean()
+    cf,cr       = cls_fake.mean(), cls_real.mean()
+    C_loss      = cf - cr + torch.abs(cf + cr)
 
-    gan_C_loss  = fake_cls - real_cls + (fake_cls+real_cls)**2
+    grad_loss   = get_grad_penalty(critic, x, fake_x, session.cur_batch(), session.phase, session.alpha)
+    stats['grad_loss']  = grad_loss.data
+    losses.append(grad_loss)
 
-    stats['real_cls'] = real_cls.data
-    stats['fake_cls'] = fake_cls.data
+    # C_loss      = -torch.log(1.0 - cls_fake).mean() - torch.log(cls_real).mean()
 
-    losses.append(gan_C_loss)
+    stats['cls_fake']   = cls_fake.mean().data
+    stats['cls_real']   = cls_real.mean().data
+    stats['C_loss']     = C_loss.data
+
+    # Propagate critic losses
+    losses.append(C_loss)
     loss = sum(losses)
-    stats['C_loss'] = loss.data
     loss.backward()
+
+    # Apply critic gradient
     session.optimizerC.step()
+
     return stats
 
 def train(session):
@@ -95,8 +113,8 @@ def train(session):
         # get data
         x     = session.get_next_batch()
         # update networks
-        stats = updateEG(x, session)
-        stats.update(updateC(x, session))
+        stats = updateModels(x, session)
+        # stats.update(updateC(x, session))
 
         # show and save statistics to tensorboard
         session.handle_stats(stats)
@@ -122,6 +140,105 @@ if __name__ == '__main__':
 
 
 ########## JUNK ########################
+
+# def updateModels(x, session):
+#     encoder, generator, critic = session.encoder, session.generator, session.critic
+#     stats  = {}
+#
+#     ########### Gradients for Encoder ###############
+#     losses = []
+#     utils.requires_grad(encoder, True)
+#     utils.requires_grad(generator, False)
+#     encoder.zero_grad()
+#
+#     real_z      = encoder(x, session.phase, session.alpha)
+#     fake_x      = generator(real_z, session.phase, session.alpha)
+#
+#     fake_z      = encoder(fake_x, session.phase, session.alpha)
+#     fake_fake_x = generator(fake_z, session.phase, session.alpha)
+#
+#     LFX         = utils.mismatch(fake_x, x, args.match_x_metric)
+#     LFFX        = utils.mismatch(fake_fake_x, fake_x, args.match_x_metric)
+#
+#     stats['x_err']     = LFX.data
+#     stats['z_err']     = utils.mismatch(real_z.detach(), fake_z.detach(), args.match_z_metric).data
+#
+#     LD_loss            = LFX - session.kt*LFFX
+#     stats['LD_loss']   = LD_loss.data
+#
+#     # Update kt
+#     lam = 0.01
+#     gam = 1
+#     session.kt  = session.kt + lam*(gam*LFX.data - LFFX.data)
+#
+#     losses.append(LD_loss)
+#
+#     # Propagate gradients for encoder
+#     loss = sum(losses)
+#     loss.backward()
+#
+#     # Apply encoder gradients
+#     session.optimizerE.step()
+#
+#     ###### Gradients for decoder ########
+#     losses = []
+#     utils.requires_grad(encoder, False)
+#     utils.requires_grad(generator, True)
+#
+#     generator.zero_grad()
+#
+#     # real_z      = encoder(x, session.phase, session.alpha)
+#     # fake_x      = generator(real_z, session.phase, session.alpha)
+#     #
+#     # fake_z      = encoder(fake_x, session.phase, session.alpha)
+#     fake_fake_x = generator(fake_z.detach(), session.phase, session.alpha)
+#
+#     LFFX        = utils.mismatch(fake_fake_x, fake_x.detach(), args.match_x_metric)
+#     LG_loss     = LFFX
+#
+#     losses.append(LG_loss)
+#     stats['LG_loss']  = LG_loss.data
+#
+#     return stats
+
+
+# def updateC(x, session):
+#     encoder, generator, critic = session.encoder, session.generator, session.critic
+#     stats, losses  = {},[]
+#     utils.requires_grad(encoder, False)
+#     utils.requires_grad(generator, False)
+#     utils.requires_grad(critic, True)
+#     critic.zero_grad()
+#
+#     real_z      = encoder(x, session.phase, session.alpha)
+#     # attention mask selects discriminator roi
+#     fake_x      = generator(real_z, session.phase, session.alpha)
+#
+#     # grad_loss   = get_grad_penalty(critic, x, fake_x, session.cur_batch(), session.phase, session.alpha)
+#     # stats['grad_loss']  = grad_loss.data
+#     # losses.append(grad_loss)
+#
+#     # fake_cls    = critic(fake_x, session.phase, session.alpha).mean()
+#     # real_cls    = critic(x, session.phase, session.alpha).mean()
+#     # gan_C_loss  = fake_cls - real_cls + (fake_cls+real_cls)**2
+#     #
+#     fake_cls    = critic(fake_x, x, session.phase, session.alpha)
+#     real_cls    = critic(x, x, session.phase, session.alpha)
+#     gan_C_loss  = -torch.log(real_cls).mean() - torch.log(1.0 - fake_cls).mean()
+#
+#     losses.append(gan_C_loss)
+#     loss = sum(losses)
+#
+#     stats['cls_fake']   = fake_cls.mean().data
+#     stats['cls_real']   = real_cls.mean().data
+#     # stats['fake_cls']   = fake_cls.data
+#     # stats['real_cls']   = real_cls.data
+#     stats['C_loss']     = loss.data
+#     loss.backward()
+#
+#     # session.optimizerC.step()
+#     return stats
+
     # utils.requires_grad(attn, False)
     # accumulate(g_running, generator)
     # utils.requires_grad(attn, True)
@@ -322,27 +439,6 @@ if __name__ == '__main__':
 
 # import numpy as np
 # from PIL import Image
-
-
-# grad_loss   = get_grad_penalty(encoder,critic,
-#                                x, fake_x, session.phase,
-#                                batch, session.alpha)
-# losses.append(grad_loss)
-
-
-# def get_grad_penalty(encoder, critic, real_image, fake_image, step, batch, alpha):
-#     eps = torch.rand(batch, 1, 1, 1).cuda()
-#
-#     x_hat = eps * real_image.data + (1 - eps) * fake_image.data
-#     x_hat = Variable(x_hat, requires_grad=True)
-#
-#     hat_z = encoder(x_hat, step, alpha)
-#     hat_predict = critic(hat_z)
-#     grad_x_hat  = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
-#
-#     # Push the gradients of the interpolated samples towards 1
-#     grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - 1)**2).mean()
-#     return grad_penalty
 
 
 # from torch.nn import functional as F

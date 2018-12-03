@@ -12,7 +12,7 @@ def parse_args():
     parser.add_argument('--match_x_metric', default='L1', help='L1|L2|cos')
     parser.add_argument('--match_z_metric', default='L2', help='L1|L2|cos')
     parser.add_argument('--use_x_metric', type=bool, default=True, help='Flag to use x based error in autoencoder')
-    parser.add_argument('--use_z_metric', type=bool, default=False, help='Flag to use x based error in autoencoder')
+    parser.add_argument('--use_z_metric', type=bool, default=None, help='Flag to use x based error in autoencoder')
     parser.add_argument('--no_TB', action='store_true', help='Do not create Tensorboard logs')
     parser.add_argument('--start_iteration', type=int, default=0)
 
@@ -20,8 +20,9 @@ def parse_args():
     parser.add_argument('--save_dir', default='/data/autoencoder/tests', help='folder to output images')
 
     ################################################################
-    parser.add_argument('--lr', type=float, default=0.0005)
-    parser.add_argument('--images_per_stage', type=int, default=1e6)
+    parser.add_argument('--EGlr', type=float, default=0.001, help='Autoencoder learning rate')
+    parser.add_argument('--Clr', type=float, default=0.001, help='Critic learning rate')
+    parser.add_argument('--images_per_stage', type=int, default=2e5)
     parser.add_argument('--checkpoint_cycle', type=int, default=1000)
     #################################################################
 
