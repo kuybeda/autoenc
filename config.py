@@ -16,6 +16,8 @@ def parse_args():
     parser.add_argument('--no_TB', action='store_true', help='Do not create Tensorboard logs')
     parser.add_argument('--start_iteration', type=int, default=0)
 
+    parser.add_argument('--datamodule', default='', help='A module file with DataWrapper class implementation')
+    parser.add_argument('--datawrapper', default='', help='A data wrapper class name')
     parser.add_argument('--summary_dir', default='/data/autoencoder/log/pine/runs', help='Tensorflow summaries directory')
     parser.add_argument('--save_dir', default='/data/autoencoder/tests', help='folder to output images')
 

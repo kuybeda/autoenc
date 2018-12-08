@@ -5,15 +5,15 @@ import  torchvision.utils
 
 import  config
 import  utils
-import  data
+# import  data
 from    filetools import mkdir_assure
 from    myplotlib import show_planes,imshow,clf
 
 args = config.get_config()
 
-def tests_run(session, loader, reconstruction=True):
+def tests_run(session, reconstruction=True):
     if reconstruction:
-        Utils.reconstruct_images(session,loader)
+        Utils.reconstruct_images(session)
 
     # if sampling:
     #     Utils.generate_random_samples(generator, session.sample_i, session)
@@ -30,7 +30,7 @@ class Utils:
         return fake_x.data
 
     @staticmethod
-    def reconstruct_images(session,loader):
+    def reconstruct_images(session):
         encoder,generator = session.encoder,session.generator
         batch, alpha, res, phase = session.cur_batch(), session.alpha, session.cur_res(), session.phase
         generator.eval()
@@ -40,12 +40,12 @@ class Utils:
         utils.requires_grad(encoder, False)
 
         nsamples    = args.test_cols * args.test_rows
-        dataset     = data.Utils.sample_data2(loader, nsamples, alpha, res, phase)
-        input_ims,_ = next(dataset)
+        session.test_data.init_epoch(nsamples, alpha, res, phase)
+        input_ims   = session.test_data.next_batch()
         reco_ims    = Utils.reconstruct(input_ims, session)
 
         # join source and reconstructed images side by side
-        out_ims     = torch.cat((input_ims,reco_ims.cpu()), 1).view(2*nsamples,1,reco_ims.shape[-2],reco_ims.shape[-1])
+        out_ims     = torch.cat((input_ims,reco_ims), 1).view(2*nsamples,1,reco_ims.shape[-2],reco_ims.shape[-1])
         sample_dir  = '{}/recon'.format(args.save_dir)
         save_path   = '{}/{}.png'.format(sample_dir, session.sample_i + 1).zfill(6)
         mkdir_assure(sample_dir)
@@ -57,38 +57,42 @@ class Utils:
         encoder.train()
         generator.train()
 
-    @staticmethod
-    def reconstruction_dryrun(generator, encoder, loader, session):
-        generator.eval()
-        encoder.eval()
-
-        utils.requires_grad(generator, False)
-        utils.requires_grad(encoder, False)
-
-        reso = session.cur_res()
-
-        warmup_rounds = 200
-        print('Warm-up rounds: {}'.format(warmup_rounds))
-
-        if session.phase < 1:
-            dataset = data.Utils.sample_data(loader, 4, reso)
-        else:
-            dataset = data.Utils.sample_data2(loader, 4, reso, session)
-        real_image, _ = next(dataset)
-        x = Variable(real_image).cuda()
-
-        for i in range(warmup_rounds):
-            ex = encoder(x, session.phase, session.alpha, args.use_ALQ).detach()
-            # ex, label = utils.split_labels_out_of_latent(ex)
-            gex = generator(ex, session.phase, session.alpha).detach()
-
-        # utils.requires_grad(generator, True)
-        # utils.requires_grad(encoder, True)
-        encoder.train()
-        generator.train()
-
-
 ########### JUNK #################
+
+    # @staticmethod
+    # def reconstruction_dryrun(generator, encoder, loader, session):
+    #     generator.eval()
+    #     encoder.eval()
+    #
+    #     utils.requires_grad(generator, False)
+    #     utils.requires_grad(encoder, False)
+    #
+    #     reso = session.cur_res()
+    #
+    #     warmup_rounds = 200
+    #     print('Warm-up rounds: {}'.format(warmup_rounds))
+    #
+    #     if session.phase < 1:
+    #         dataset = data.Utils.sample_data(loader, 4, reso)
+    #     else:
+    #         dataset = data.Utils.sample_data2(loader, 4, reso, session)
+    #     real_image, _ = next(dataset)
+    #     x = Variable(real_image).cuda()
+    #
+    #     for i in range(warmup_rounds):
+    #         ex = encoder(x, session.phase, session.alpha, args.use_ALQ).detach()
+    #         # ex, label = utils.split_labels_out_of_latent(ex)
+    #         gex = generator(ex, session.phase, session.alpha).detach()
+    #
+    #     # utils.requires_grad(generator, True)
+    #     # utils.requires_grad(encoder, True)
+    #     encoder.train()
+    #     generator.train()
+
+        # dataset     = data.Utils.sample_data2(loader, nsamples, alpha, res, phase)
+        # input_ims,_ = next(dataset)
+        # input_ims   = session.get_next_test_batch(nsamples) #data.Utils.sample_data2(loader, nsamples, alpha, res, phase)
+
 
         # attn.eval()
         # utils.requires_grad(attn, False)

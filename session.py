@@ -5,9 +5,9 @@ import  torch
 import  os
 from    datetime import datetime
 import  random
-import  data
+# import  data
 import  utils
-from    torch.autograd import Variable #, grad
+# from    torch.autograd import Variable #, grad
 from    tqdm import tqdm
 
 args   = config.get_config()
@@ -59,19 +59,13 @@ class Session:
         torch.manual_seed(args.manual_seed)
         torch.cuda.manual_seed_all(args.manual_seed)
 
-        if args.train_path:
-            self.train_data_loader  = data.get_loader(args.train_path)
-            self.epoch_len          = len(self.train_data_loader(1, 4).dataset)
-        else:
-            self.train_data_loader  = None
-            self.epoch_len          = 0
+        # import a custom data loader
+        Datawrapper = getattr(__import__(args.datamodule, fromlist=[None]),args.datawrapper)
 
-        if args.test_path:
-            self.test_data_loader = data.get_loader(args.test_path)
-        elif args.aux_inpath:
-            self.test_data_loader = data.get_loader(args.aux_inpath)
-        else:
-            self.test_data_loader = None
+        # self.train_data_loader  = data.get_loader(args.train_path)
+        self.train_data  = Datawrapper(args.train_path, args.gpu_count)
+        self.epoch_len  = self.train_data.epoch_len() # len(self.train_data_loader(1, 4).dataset)
+        self.test_data   = Datawrapper(args.test_path, args.gpu_count) #  = data.get_loader(args.test_path)
 
     def load_checkpoint(self):
         checkname = os.path.join(args.checkpoint_dir, 'latest_state')
@@ -108,7 +102,7 @@ class Session:
             self.phase += args.phase_offset
             self.alpha = 0.0
             self.kt    = 0.0
-        self.init_train_dataset()
+        self.init_train_data()
         self.update_phase()
 
     def update_phase(self):
@@ -122,25 +116,38 @@ class Session:
                 self.phase += iteration_levels
                 sample_i_current_stage -= iteration_levels * args.images_per_stage
                 # reinitialize dataset to produce larger images
-                self.init_train_dataset()
+                self.init_train_data()
                 print("iteration B alpha={} phase {} will be reduced to 1 and [max]".format(sample_i_current_stage, self.phase))
         # alpha growth 1/4th of the cycle
         self.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage)
 
-    def init_train_dataset(self):
-        batch, alpha, res, phase = self.cur_batch(), self.alpha, self.cur_res(), self.phase
-        self.train_dataset = data.Utils.sample_data2(self.train_data_loader, batch, alpha, res, phase )
+    def init_train_data(self):
+        batch_size, alpha, res, phase = self.cur_batch(), self.alpha, self.cur_res(), self.phase
+        self.train_data.init_epoch(batch_size, alpha, res, phase)
+        # self.train_dataset = data.Utils.sample_data2(self.train_data_loader, batch, alpha, res, phase )
+        # self.train_dataset = self.train_data.sample_data(batch, alpha, res, phase)
 
+    # def init_test_dataset(self, batch_size):
+    #     alpha, res, phase  = self.cur_batch(), self.alpha, self.cur_res(), self.phase
+    #     self.test_dataset  = self.test_data.sample_data(batch_size, alpha, res, phase)
 
-    def get_next_batch(self):
-        try:
-            real_image, _ = next(self.train_dataset)
-        except (OSError, StopIteration):
-            # restart dataset if epoch ended
-            batch, alpha, res, phase = self.cur_batch(), self.alpha, self.cur_res(), self.phase
-            train_dataset = data.Utils.sample_data2(self.train_data_loader, batch, alpha, res, phase)
-            real_image, _ = next(train_dataset)
-        return Variable(real_image).cuda(async=(args.gpu_count > 1))
+    def get_next_train_batch(self):
+        # batch, self.train_dataset = self.get_next_batch(self.train_data, self.train_dataset)
+        return self.train_data.next_batch()
+
+    # def get_next_test_batch(self):
+    #     batch,self.test_dataset = self.get_next_batch(self.test_data, self.test_dataset)
+    #     return batch
+
+    # def get_next_batch(self, data, dataset):
+    #     try:
+    #         real_image, _ = next(dataset)
+    #     except (OSError, StopIteration):
+    #         # restart dataset if epoch ended
+    #         alpha, res, phase   = self.alpha, self.cur_res(), self.phase
+    #         dataset             = data.sample_data(batch_size, alpha, res, phase)
+    #         real_image, _       = next(dataset)
+    #     return Variable(real_image).cuda(async=(args.gpu_count > 1)), dataset
 
     def handle_stats(self,stats):
         #  Display Statistics
@@ -186,12 +193,9 @@ class Session:
         torch.save({'G_state_dict': self.generator.state_dict(),
                     'E_state_dict': self.encoder.state_dict(),
                     'C_state_dict': self.critic.state_dict(),
-                    # 'A_state_dict': self.attn.state_dict(),
-                    # 'G_running_state_dict': self.g_running.state_dict(),
                     'optimizerE': self.optimizerE.state_dict(),
                     'optimizerG': self.optimizerG.state_dict(),
                     'optimizerC': self.optimizerC.state_dict(),
-                    # 'optimizerA': self.optimizerA.state_dict(),
                     'iteration': self.sample_i,
                     'phase': self.phase,
                     'alpha': self.alpha,
@@ -203,16 +207,13 @@ class Session:
         self.sample_i = int(checkpoint['iteration'])
 
         self.generator.load_state_dict(checkpoint['G_state_dict'])
-        # self.g_running.load_state_dict(checkpoint['G_running_state_dict'])
         self.encoder.load_state_dict(checkpoint['E_state_dict'])
         self.critic.load_state_dict(checkpoint['C_state_dict'])
-        # self.attn.load_state_dict(checkpoint['A_state_dict'])
 
         if not args.reset_optimizers:
             self.optimizerE.load_state_dict(checkpoint['optimizerE'])
             self.optimizerG.load_state_dict(checkpoint['optimizerG'])
             self.optimizerC.load_state_dict(checkpoint['optimizerC'])
-            # self.optimizerA.load_state_dict(checkpoint['optimizerA'])
             print("Reloaded old optimizers")
         else:
             print("Despite loading the state, we reset the optimizers.")
@@ -230,11 +231,6 @@ class Session:
     def create(self):
         if args.start_iteration <= 0:
             args.start_iteration = 1
-            # if args.no_progression:
-            #     self.sample_i = args.start_iteration = int((args.max_phase + 0.5) * args.images_per_stage)  # Start after the fade-in stage of the last iteration
-            #     args.force_alpha = 1.0
-            #     print("Progressive growth disabled. Setting start step = {} and alpha = {}".format(args.start_iteration,
-            #                                                                                        args.force_alpha))
         else:
             reload_from = '{}/checkpoint/{}_state'.format(args.save_dir, str(args.start_iteration).zfill(
                 6))  # e.g. '604000' #'600000' #latest'
@@ -243,15 +239,32 @@ class Session:
                 self.load(reload_from)
                 print("Loaded {}".format(reload_from))
                 print("Iteration asked {} and got {}".format(args.start_iteration, self.sample_i))
-
-                # if args.testonly:
-                #     self.generator = copy.deepcopy(self.g_running)
             else:
                 assert (not args.testonly)
                 self.sample_i = args.start_iteration
                 print('Start from iteration {}'.format(self.sample_i))
 
 ########### JUNK ############################
+
+                # if args.testonly:
+                #     self.generator = copy.deepcopy(self.g_running)
+
+        # else:
+        #     self.train_data_loader  = None
+        #     self.epoch_len          = 0
+
+         # if args.test_path:
+        # elif args.aux_inpath:
+        #     self.test_data_loader = data.get_loader(args.aux_inpath)
+        # else:
+        #     self.test_data_loader = None
+
+
+            # if args.no_progression:
+            #     self.sample_i = args.start_iteration = int((args.max_phase + 0.5) * args.images_per_stage)  # Start after the fade-in stage of the last iteration
+            #     args.force_alpha = 1.0
+            #     print("Progressive growth disabled. Setting start step = {} and alpha = {}".format(args.start_iteration,
+            #                                                                                        args.force_alpha))
 
         # self.g_running.train(False)
         # if args.force_alpha >= 0.0:

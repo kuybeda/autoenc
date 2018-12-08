@@ -129,7 +129,7 @@ def train(session):
 
     while session.sample_i < session.total_steps:
         # get data
-        x     = session.get_next_batch()
+        x     = session.get_next_train_batch()
         # update networks
         stats = updateModels(x, session)
         # stats.update(updateC(x, session))
@@ -142,7 +142,7 @@ def train(session):
         session.save_checkpoint()
 
         # write test images
-        evaluate.tests_run(session, session.train_data_loader, reconstruction = (session.batch_count % 100 == 0))
+        evaluate.tests_run(session, reconstruction = (session.batch_count % 100 == 0))
 
     session.finish()
 
