@@ -1,146 +1,176 @@
 import  torch
-from    torch import nn
-from    torch.nn import functional as F
-# import  utils
+from    torch import nn,optim
+# from    torch.nn import functional as F
+import  utils
 import  config
-from    cnnutils import EqualConv2d, PixelNorm, DenseBlock, SpectralNormConv2d
+from    model_utils import Generator, Encoder, Critic
+from    torch.autograd import Variable, grad
+# from    cnnutils import EqualConv2d, PixelNorm, DenseBlock, SpectralNormConv2d
 
 args   = config.get_config()
 
-class Generator(nn.Module):
-    def __init__(self, nz, pixel_norm=False, spectral_norm=True):
+def critic_grad_penalty(critic, x, fake_x, batch, phase, alpha, grad_norm):
+    eps         = torch.rand(batch, 1, 1, 1).cuda()
+    x_hat       = eps * x.data + (1 - eps) * fake_x.data
+    x_hat       = Variable(x_hat, requires_grad=True)
+    hat_predict = critic(x_hat, x, phase, alpha)
+    grad_x_hat  = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
+    # Push the gradients of the interpolated samples towards 1
+    grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - grad_norm)**2).mean()
+    return grad_penalty
+
+def autoenc_grad_norm(encoder, generator, x, phase, alpha):
+    x_hat        = Variable(x, requires_grad=True)
+    z_hat        = encoder(x_hat, phase, alpha)
+    fake_x_hat   = generator(z_hat, phase, alpha)
+    err_x_hat    = utils.mismatch(fake_x_hat, x_hat, args.match_x_metric)
+    grad_x_hat   = grad(outputs=err_x_hat.sum(), inputs=x_hat, create_graph=True)[0]
+    grad_norm    = grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1)
+    return grad_norm
+
+class Model(nn.Module):
+    def __init__(self):
         super().__init__()
+        self.encoder    = nn.DataParallel(Encoder(args.nz).cuda())
+        self.generator  = nn.DataParallel(Generator(args.nz).cuda())
+        self.critic     = nn.DataParallel(Critic(args.nz).cuda())
+        self.reset_optimization()
 
-        mxgrow = 16
-        self.progression = nn.ModuleList([DenseBlock('block1', nz, mxgrow, nz//mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block2', nz, mxgrow, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block3', nz, mxgrow, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block4', nz, mxgrow, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block5', nz, mxgrow//2, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block6', nz//2, mxgrow//4, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block7', nz//4, mxgrow//8, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block8', nz//8, mxgrow//8, nz // (2*mxgrow),
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block9', nz//16, mxgrow//16, nz // (2*mxgrow),
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
+    def reset_optimization(self):
+        self.optimizerG = optim.Adam(self.generator.parameters(), args.EGlr, betas=(0.0, 0.99))
+        self.optimizerE = optim.Adam(self.encoder.parameters(), args.EGlr, betas=(0.0, 0.99))
+        self.optimizerC = optim.Adam(self.critic.parameters(), args.Clr, betas=(0.0, 0.99))
 
-        self.to_gray = nn.ModuleList([EqualConv2d(nz, 1, 1), #Each has 1 channel and kernel size 1x1!
-                                      EqualConv2d(nz, 1, 1),
-                                      EqualConv2d(nz, 1, 1),
-                                      EqualConv2d(nz, 1, 1),
-                                      EqualConv2d(nz//2, 1, 1),
-                                      EqualConv2d(nz//4, 1, 1),
-                                      EqualConv2d(nz//8, 1, 1),
-                                      EqualConv2d(nz//16, 1, 1),
-                                      EqualConv2d(nz//32, 1, 1)])
+    def update(self, batch, phase, alpha):
+        encoder, generator, critic = self.encoder, self.generator, self.critic
+        # batch_size, alpha, phase = session.cur_batch(), alpha, phase
+        stats, losses = {}, []
+        utils.requires_grad(encoder, True)
+        utils.requires_grad(generator, True)
+        utils.requires_grad(critic, False)
+        encoder.zero_grad()
+        generator.zero_grad()
 
-        self.nonlin = nn.LeakyReLU(0.2)
+        x = batch[0]
+        batch_size = x.shape[0]
 
-    def forward(self, input, step=0, alpha=-1):
-        out = input
-        for i, (conv, to_gray) in enumerate(zip(self.progression, self.to_gray)):
+        real_z = encoder(x, phase, alpha)
+        fake_x = generator(real_z, phase, alpha)
 
-            if i > 0 and step > 0:
-                upsample = F.interpolate(out, scale_factor=2, mode='nearest') #, align_corners=False)
-                out = conv(upsample)
-            else:
-                out = conv(out)
+        # use no gradient propagation if no x metric is required
+        if args.use_x_metric:
+            # match x: E_x||g(e(x)) - x|| -> min_e
+            err_x = utils.mismatch(fake_x, x, args.match_x_metric)
+            losses.append(err_x)
+        else:
+            with torch.no_grad():
+                err_x = utils.mismatch(fake_x, x, args.match_x_metric)
+        stats['x_err'] = err_x.data
 
-            if i == step: # The final layer is ALWAYS either to_rgb layer, or a mixture of 2 to-rgb_layers!
-                out = self.nonlin(out)
-                out = to_gray(out)
+        if args.use_z_metric:
+            # cyclic match z E_x||e(g(e(x))) - e(x)||^2
+            fake_z = encoder(fake_x, phase, alpha)
+            err_z = utils.mismatch(real_z, fake_z, args.match_z_metric)
+            losses.append(err_z)
+        else:
+            with torch.no_grad():
+                fake_z = encoder(fake_x, phase, alpha)
+                err_z = utils.mismatch(real_z, fake_z, args.match_z_metric)
+        stats['z_err'] = err_z.data
 
-                if i > 0 and 0 <= alpha < 1:
-                    # use previous 1x1 to gray transform
-                    upsample    = self.nonlin(upsample)
-                    skip_gray   = self.to_gray[i - 1](upsample)
-                    out         = (1 - alpha) * skip_gray + alpha * out
-                break
-        return out
+        cls_fake = critic(fake_x, x, phase, alpha)
 
-class Bottleneck(nn.Module):
-    def __init__(self, nz, in_channels, pixel_norm, spectral_norm):
-        super().__init__()
-        mxgrow = 16
-        self.progression = nn.ModuleList([DenseBlock('block1', nz//32, mxgrow//8, nz // (2*mxgrow),
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block2', nz // 16, mxgrow//8, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block3', nz // 8, mxgrow//4, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block4', nz // 4, mxgrow//2, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block5', nz // 2, mxgrow, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block6', nz, mxgrow, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block7', nz, mxgrow, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block8', nz, mxgrow, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm),
-                                          DenseBlock('block9', nz, mxgrow, nz // mxgrow,
-                                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm)])
+        cls_real = critic(x, x, phase, alpha)
 
-        self.from_gray = nn.ModuleList([EqualConv2d(in_channels,nz // 32,1,1),
-                                        EqualConv2d(in_channels, nz // 16, 1, 1),
-                                        EqualConv2d(in_channels, nz // 8, 1, 1),
-                                        EqualConv2d(in_channels, nz // 4, 1, 1),
-                                        EqualConv2d(in_channels, nz // 2, 1, 1),
-                                        EqualConv2d(in_channels, nz , 1, 1),
-                                        EqualConv2d(in_channels, nz , 1, 1),
-                                        EqualConv2d(in_channels, nz, 1, 1),
-                                        EqualConv2d(in_channels, nz, 1, 1)])
+        # measure loss only where real score is highre than fake score
+        G_loss = -(cls_fake * (cls_real.detach() > cls_fake.detach()).float()).mean()
 
-        self.n_layer = len(self.progression)
+        # Gloss      = -torch.log(cls_fake).mean()
+        stats['G_loss'] = G_loss.data
+        # warm up critic loss to kick in with alpha
+        losses.append(alpha * G_loss)
 
-    def forward(self, pool, input, phase, alpha):
-        for i in range(phase, -1, -1):
-            index = self.n_layer - i - 1
+        # Propagate gradients for encoder and decoder
+        loss = sum(losses)
+        loss.backward()
 
-            if i == phase:
-                out = self.from_gray[index](input)
+        # Apply encoder and decoder gradients
+        self.optimizerE.step()
+        self.optimizerG.step()
 
-            out = self.progression[index](out)
-            if i > 0:
-                out = F.avg_pool2d(out, 2)
-                if i == phase and 0 <= alpha < 1:
-                    skip     = F.avg_pool2d(input, 2)
-                    skip    = self.from_gray[index + 1](skip)
-                    out = (1 - alpha) * skip + alpha * out
-        return out
+        ###### Critic ########
+        losses = []
+        utils.requires_grad(critic, True)
+        utils.requires_grad(encoder, False)
+        utils.requires_grad(generator, False)
+        critic.zero_grad()
+        # Use fake_x, as fixed data here
+        fake_x = fake_x.detach()
 
-class Encoder(Bottleneck):
-    def __init__(self, nz, pixel_norm=True, spectral_norm=False):
-        super().__init__(nz, 1, pixel_norm, spectral_norm)
+        cls_fake = critic(fake_x, x, phase, alpha)
+        cls_real = critic(x, x, phase, alpha)
 
-    def forward(self,  input, step, alpha):
-        out = super().forward(F.avg_pool2d, input, step, alpha)
-        return out
+        cf, cr = cls_fake.mean(), cls_real.mean()
+        C_loss = cf - cr + torch.abs(cf + cr)
 
-class Critic(Bottleneck):
-    def __init__(self, nz, pixel_norm=False, spectral_norm=True):
-        super().__init__(nz, 2, pixel_norm, spectral_norm)
-        self.classifier  = nn.Sequential(nn.LeakyReLU(0.2),
-                                         SpectralNormConv2d(nz, nz, 3),
-                                         nn.LeakyReLU(0.2),
-                                         nn.AdaptiveAvgPool2d(1),
-                                         SpectralNormConv2d(nz, 1, 1,bias=False))
+        grad_norm = autoenc_grad_norm(encoder, generator, x, phase, alpha).mean()
+        grad_loss = critic_grad_penalty(critic, x, fake_x, batch_size, phase, alpha, grad_norm)
+        stats['grad_loss'] = grad_loss.data
+        losses.append(grad_loss)
 
-    def forward(self, input1, input2, step, alpha):
-        # input = input1
-        input = torch.cat((input1,input2),dim=1)
-        out   = super().forward(F.avg_pool2d, input, step, alpha)
-        # return torch.sigmoid(self.classifier(out)).squeeze(2).squeeze(2)
-        return self.classifier(out).squeeze(2).squeeze(2)
+        # C_loss      = -torch.log(1.0 - cls_fake).mean() - torch.log(cls_real).mean()
+
+        stats['cls_fake'] = cls_fake.mean().data
+        stats['cls_real'] = cls_real.mean().data
+        stats['C_loss'] = C_loss.data
+
+        # Propagate critic losses
+        losses.append(C_loss)
+        loss = sum(losses)
+        loss.backward()
+
+        # Apply critic gradient
+        self.optimizerC.step()
+        return stats
+
+    def dry_run(self, batch, phase, alpha):
+        ''' dry run model on the batch '''
+        encoder,generator = self.encoder,self.generator
+        generator.eval()
+        encoder.eval()
+        x = batch[0]
+        batch_size = x.shape[0]
+
+        utils.requires_grad(generator, False)
+        utils.requires_grad(encoder, False)
+
+        real_z      = encoder(x, phase, alpha)
+        reco_ims    = generator(real_z, phase, alpha).data
+
+        # join source and reconstructed images side by side
+        out_ims     = torch.cat((x,reco_ims), 1).view(2*batch_size,1,reco_ims.shape[-2],reco_ims.shape[-1])
+
+        # utils.requires_grad(generator, True)
+        # utils.requires_grad(encoder, True)
+        encoder.train()
+        generator.train()
+        return out_ims
+
 
 # ############# JUNK #########################
+
+    # def save(self,path):
+    #     torch.save(self.state_dict(),path)
+        # torch.save({'G_state_dict': self.generator.state_dict(),
+        #             'E_state_dict': self.encoder.state_dict(),
+        #             'C_state_dict': self.critic.state_dict(),
+        #             'optimizerE': self.optimizerE.state_dict(),
+        #             'optimizerG': self.optimizerG.state_dict(),
+        #             'optimizerC': self.optimizerC.state_dict()}, path)
+
+    # def load(self, path):
+    #     self.load_state_dict()
+
 
         # self.to_gray = nn.ModuleList([nn.Conv2d(nz, 1, 1), #Each has 1 channel and kernel size 1x1!
         #                              nn.Conv2d(nz, 1, 1),

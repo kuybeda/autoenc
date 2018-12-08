@@ -1,9 +1,10 @@
 import  torch
 from    torch import nn
-from    torch.autograd import Variable
 from    math import sqrt
 import  config
 from    torch.nn import init
+from    torch.autograd import Variable, grad
+# import  utils
 
 args   = config.get_config()
 

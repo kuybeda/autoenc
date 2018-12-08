@@ -42,7 +42,11 @@ class Utils:
         nsamples    = args.test_cols * args.test_rows
         session.test_data.init_epoch(nsamples, alpha, res, phase)
         input_ims   = session.test_data.next_batch()
-        reco_ims    = Utils.reconstruct(input_ims, session)
+
+        real_z      = encoder(input_ims, session.phase, session.alpha)
+        reco_ims    = generator(real_z, session.phase, session.alpha).data
+
+        # reco_ims    = Utils.reconstruct(input_ims, session)
 
         # join source and reconstructed images side by side
         out_ims     = torch.cat((input_ims,reco_ims), 1).view(2*nsamples,1,reco_ims.shape[-2],reco_ims.shape[-1])

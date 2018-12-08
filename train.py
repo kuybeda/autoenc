@@ -3,121 +3,11 @@ import  config
 import  utils
 import  evaluate
 from    session import Session
-from    torch.autograd import Variable, grad
 
 import  torch.backends.cudnn as cudnn
 cudnn.benchmark = True
 args     = config.get_config()
 
-def critic_grad_penalty(critic, x, fake_x, batch, phase, alpha, grad_norm):
-    eps         = torch.rand(batch, 1, 1, 1).cuda()
-    x_hat       = eps * x.data + (1 - eps) * fake_x.data
-    x_hat       = Variable(x_hat, requires_grad=True)
-    hat_predict = critic(x_hat, x, phase, alpha)
-    grad_x_hat  = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
-    # Push the gradients of the interpolated samples towards 1
-    grad_penalty = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - grad_norm)**2).mean()
-    return grad_penalty
-
-def autoenc_grad_norm(encoder, generator, x, phase, alpha):
-    x_hat        = Variable(x, requires_grad=True)
-    z_hat        = encoder(x_hat, phase, alpha)
-    fake_x_hat   = generator(z_hat, phase, alpha)
-    err_x_hat    = utils.mismatch(fake_x_hat, x_hat, args.match_x_metric)
-    grad_x_hat   = grad(outputs=err_x_hat.sum(), inputs=x_hat, create_graph=True)[0]
-    grad_norm    = grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1)
-    return grad_norm
-
-def updateModels(batch, session):
-    encoder, generator, critic = session.encoder, session.generator, session.critic
-    batch_size,alpha,phase = session.cur_batch(), session.alpha, session.phase
-    stats, losses  = {},[]
-    utils.requires_grad(encoder, True)
-    utils.requires_grad(generator, True)
-    utils.requires_grad(critic, False)
-    encoder.zero_grad()
-    generator.zero_grad()
-
-    x           = batch[0]
-    real_z      = encoder(x, phase, alpha)
-    fake_x      = generator(real_z, phase, alpha)
-
-    # use no gradient propagation if no x metric is required
-    if args.use_x_metric:
-        # match x: E_x||g(e(x)) - x|| -> min_e
-        err_x   = utils.mismatch(fake_x, x, args.match_x_metric)
-        losses.append(err_x)
-    else:
-        with torch.no_grad():
-            err_x = utils.mismatch(fake_x, x, args.match_x_metric)
-    stats['x_err'] = err_x.data
-
-    if args.use_z_metric:
-        # cyclic match z E_x||e(g(e(x))) - e(x)||^2
-        fake_z    = encoder(fake_x, phase, session.alpha)
-        err_z     = utils.mismatch(real_z, fake_z, args.match_z_metric)
-        losses.append(err_z)
-    else:
-        with torch.no_grad():
-            fake_z = encoder(fake_x, session.phase, session.alpha)
-            err_z  = utils.mismatch(real_z, fake_z, args.match_z_metric)
-    stats['z_err'] = err_z.data
-
-    cls_fake   = critic(fake_x, x, session.phase, session.alpha)
-
-    cls_real   = critic(x, x, session.phase, session.alpha)
-
-    # measure loss only where real score is highre than fake score
-    G_loss     = -(cls_fake*(cls_real.detach() > cls_fake.detach()).float()).mean()
-
-    # Gloss      = -torch.log(cls_fake).mean()
-    stats['G_loss']  = G_loss.data
-    # warm up critic loss to kick in with alpha
-    losses.append(session.alpha*G_loss)
-
-    # Propagate gradients for encoder and decoder
-    loss = sum(losses)
-    loss.backward()
-
-    # Apply encoder and decoder gradients
-    session.optimizerE.step()
-    session.optimizerG.step()
-
-    ###### Critic ########
-    losses = []
-    utils.requires_grad(critic, True)
-    utils.requires_grad(encoder, False)
-    utils.requires_grad(generator, False)
-    critic.zero_grad()
-    # Use fake_x, as fixed data here
-    fake_x      = fake_x.detach()
-
-    cls_fake    = critic(fake_x, x, session.phase, session.alpha)
-    cls_real    = critic(x, x, session.phase, session.alpha)
-
-    cf,cr       = cls_fake.mean(), cls_real.mean()
-    C_loss      = cf - cr + torch.abs(cf + cr)
-
-    grad_norm   = autoenc_grad_norm(encoder, generator, x, phase, alpha).mean()
-    grad_loss   = critic_grad_penalty(critic, x, fake_x, batch_size, phase, alpha, grad_norm)
-    stats['grad_loss']  = grad_loss.data
-    losses.append(grad_loss)
-
-    # C_loss      = -torch.log(1.0 - cls_fake).mean() - torch.log(cls_real).mean()
-
-    stats['cls_fake']   = cls_fake.mean().data
-    stats['cls_real']   = cls_real.mean().data
-    stats['C_loss']     = C_loss.data
-
-    # Propagate critic losses
-    losses.append(C_loss)
-    loss = sum(losses)
-    loss.backward()
-
-    # Apply critic gradient
-    session.optimizerC.step()
-
-    return stats
 
 def train(session):
     # init progress bar and tensorboard statistics
@@ -129,7 +19,7 @@ def train(session):
         # get data
         batch = session.get_next_train_batch()
         # update networks
-        stats = updateModels(batch, session)
+        stats = session.update_model(batch)
 
         # show and save statistics to tensorboard
         session.handle_stats(stats)
@@ -139,7 +29,9 @@ def train(session):
         session.save_checkpoint()
 
         # write test images
-        evaluate.tests_run(session, reconstruction = (session.batch_count % 100 == 0))
+        if (session.batch_count % 100 == 0):
+            session.write_tests()
+        # evaluate.tests_run(session, reconstruction = (session.batch_count % 100 == 0))
 
     session.finish()
 

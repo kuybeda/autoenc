@@ -1,5 +1,6 @@
-from    model import Generator, Encoder, Critic
-from    torch import nn, optim
+# from    model import Generator, Encoder, Critic
+# from    torch import nn, optim
+from    torch import nn
 import  config
 import  torch
 import  os
@@ -9,6 +10,8 @@ import  random
 import  utils
 # from    torch.autograd import Variable #, grad
 from    tqdm import tqdm
+from    filetools import mkdir_assure
+import  torchvision.utils
 
 args   = config.get_config()
 
@@ -30,9 +33,10 @@ def batch_size(reso):
 
     return batch_table[reso]*2
 
-class Session:
+class Session(nn.Module):
 
     def __init__(self):
+        super().__init__()
         # Note: 4 requirements for sampling from pre-existing models:
         # 1) Ensure you save and load both multi-gpu versions (DataParallel) or both not.
         # 2) Ensure you set the same phase value as the pre-existing model and that your local and global alpha=1.0 are set
@@ -44,12 +48,10 @@ class Session:
         self.sample_i   = min(args.start_iteration, 0)
         self.phase      = args.start_phase
         self.total_steps = args.total_kimg * 1000
+        Model           = getattr(__import__(args.modelmodule, fromlist=[None]),'Model')
+        self.model      = Model()
 
-        self.encoder    = nn.DataParallel(Encoder(args.nz).cuda())
-        self.generator  = nn.DataParallel(Generator(args.nz).cuda())
-        self.critic     = nn.DataParallel(Critic(args.nz).cuda())
         print("Using ", torch.cuda.device_count(), " GPUs!")
-        self.reset_opt()
         self.setup()
         print('Session created.')
 
@@ -102,6 +104,9 @@ class Session:
             self.kt    = 0.0
         self.init_train_data()
         self.update_phase()
+
+    def update_model(self,batch):
+        return self.model.update(batch,self.phase,self.alpha)
 
     def update_phase(self):
         steps_in_previous_phases    = max(self.phase * args.images_per_stage, args.step_offset)
@@ -156,55 +161,18 @@ class Session:
     def save_checkpoint(self):
         if self.batch_count % args.checkpoint_cycle == 0:
             for postfix in {'latest', str(self.sample_i).zfill(6)}:
-                self.save_all('{}/{}_state'.format(args.checkpoint_dir, postfix))
+                self.save('{}/{}_state'.format(args.checkpoint_dir, postfix))
             print("\nCheckpointed to {}".format(self.sample_i))
 
     def finish(self):
         self.pbar.close()
 
-    def reset_opt(self):
-        self.optimizerG = optim.Adam(self.generator.parameters(), args.EGlr, betas=(0.0, 0.99))
-        self.optimizerE = optim.Adam(self.encoder.parameters(), args.EGlr, betas=(0.0, 0.99))
-        self.optimizerC = optim.Adam(self.critic.parameters(), args.Clr, betas=(0.0, 0.99))
-
-    def save_all(self, path):
-        torch.save({'G_state_dict': self.generator.state_dict(),
-                    'E_state_dict': self.encoder.state_dict(),
-                    'C_state_dict': self.critic.state_dict(),
-                    'optimizerE': self.optimizerE.state_dict(),
-                    'optimizerG': self.optimizerG.state_dict(),
-                    'optimizerC': self.optimizerC.state_dict(),
-                    'iteration': self.sample_i,
-                    'phase': self.phase,
-                    'alpha': self.alpha,
-                    'kt': self.kt},
-                   path)
+    def save(self, path):
+        torch.save({'session':self.model.state_dict()},path)
 
     def load(self, path):
         checkpoint = torch.load(path)
-        self.sample_i = int(checkpoint['iteration'])
-
-        self.generator.load_state_dict(checkpoint['G_state_dict'])
-        self.encoder.load_state_dict(checkpoint['E_state_dict'])
-        self.critic.load_state_dict(checkpoint['C_state_dict'])
-
-        if not args.reset_optimizers:
-            self.optimizerE.load_state_dict(checkpoint['optimizerE'])
-            self.optimizerG.load_state_dict(checkpoint['optimizerG'])
-            self.optimizerC.load_state_dict(checkpoint['optimizerC'])
-            print("Reloaded old optimizers")
-        else:
-            print("Despite loading the state, we reset the optimizers.")
-
-        self.alpha = checkpoint['alpha']
-        self.kt    = checkpoint['kt']
-        self.phase = int(checkpoint['phase'])
-        if args.start_phase > 0:  # If the start phase has been manually set, try to actually use it (e.g. when have trained 64x64 for extra rounds and then turning the model over to 128x128)
-            self.phase = min(args.start_phase, self.phase)
-            print("Use start phase: {}".format(self.phase))
-        if self.phase > args.max_phase:
-            print('Warning! Loaded model claimed phase {} but max_phase={}'.format(self.phase, args.max_phase))
-            self.phase = args.max_phase
+        self.load_state_dict(checkpoint['session'])
 
     def create(self):
         if args.start_iteration <= 0:
@@ -222,7 +190,60 @@ class Session:
                 self.sample_i = args.start_iteration
                 print('Start from iteration {}'.format(self.sample_i))
 
+    def write_tests(self):
+        nsamples = args.test_cols * args.test_rows
+        self.test_data.init_epoch(nsamples, self.alpha, self.cur_res(), self.phase)
+        batch       = self.test_data.next_batch()
+        out_ims     = self.model.dry_run(batch, self.phase, self.alpha)
+        sample_dir  = '{}/recon'.format(args.save_dir)
+        save_path   = '{}/{}.png'.format(sample_dir, self.sample_i + 1).zfill(6)
+        mkdir_assure(sample_dir)
+        print('\nSaving a new collage ...')
+        torchvision.utils.save_image(out_ims, save_path, nrow=args.test_cols, normalize=True, padding=0, scale_each=False)
+
+
 ########### JUNK ############################
+
+        # self.encoder    = nn.DataParallel(Encoder(args.nz).cuda())
+        # self.generator  = nn.DataParallel(Generator(args.nz).cuda())
+        # self.critic     = nn.DataParallel(Critic(args.nz).cuda())
+
+        # self.sample_i = int(checkpoint['iteration'])
+        #
+        # self.generator.load_state_dict(checkpoint['G_state_dict'])
+        # self.encoder.load_state_dict(checkpoint['E_state_dict'])
+        # self.critic.load_state_dict(checkpoint['C_state_dict'])
+        #
+        # if not args.reset_optimizers:
+        #     self.optimizerE.load_state_dict(checkpoint['optimizerE'])
+        #     self.optimizerG.load_state_dict(checkpoint['optimizerG'])
+        #     self.optimizerC.load_state_dict(checkpoint['optimizerC'])
+        #     print("Reloaded old optimizers")
+        # else:
+        #     print("Despite loading the state, we reset the optimizers.")
+        #
+        # self.alpha = checkpoint['alpha']
+        # self.kt    = checkpoint['kt']
+        # self.phase = int(checkpoint['phase'])
+        # if args.start_phase > 0:  # If the start phase has been manually set, try to actually use it (e.g. when have trained 64x64 for extra rounds and then turning the model over to 128x128)
+        #     self.phase = min(args.start_phase, self.phase)
+        #     print("Use start phase: {}".format(self.phase))
+        # if self.phase > args.max_phase:
+        #     print('Warning! Loaded model claimed phase {} but max_phase={}'.format(self.phase, args.max_phase))
+        #     self.phase = args.max_phase
+
+
+        # torch.save({'iteration': self.sample_i,
+        #             'phase': self.phase,
+        #             'alpha': self.alpha,
+        #             'kt': self.kt}, path)
+
+
+    # def reset_opt(self):
+    #     self.optimizerG = optim.Adam(self.generator.parameters(), args.EGlr, betas=(0.0, 0.99))
+    #     self.optimizerE = optim.Adam(self.encoder.parameters(), args.EGlr, betas=(0.0, 0.99))
+    #     self.optimizerC = optim.Adam(self.critic.parameters(), args.Clr, betas=(0.0, 0.99))
+
 
     # def get_next_test_batch(self):
     #     batch,self.test_dataset = self.get_next_batch(self.test_data, self.test_dataset)
