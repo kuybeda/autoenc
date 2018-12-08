@@ -49,9 +49,6 @@ def updateModels(x, session):
         # match x: E_x||g(e(x)) - x|| -> min_e
         err_x   = utils.mismatch(fake_x, x, args.match_x_metric)
         losses.append(err_x)
-        # grad_loss = autoenc_grad_penalty(encoder, generator, x, phase, alpha)
-        # losses.append(100.0*grad_loss)
-        # stats['autoenc_grad'] = grad_loss.data
     else:
         with torch.no_grad():
             err_x = utils.mismatch(fake_x, x, args.match_x_metric)
@@ -161,6 +158,10 @@ if __name__ == '__main__':
 
 
 ########## JUNK ########################
+
+# grad_loss = autoenc_grad_penalty(encoder, generator, x, phase, alpha)
+# losses.append(100.0*grad_loss)
+# stats['autoenc_grad'] = grad_loss.data
 
 # def updateModels(x, session):
 #     encoder, generator, critic = session.encoder, session.generator, session.critic

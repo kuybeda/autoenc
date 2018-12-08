@@ -140,10 +140,10 @@ class DenseLayer(nn.Sequential):
         self.g_name = name
         self.add_module('nonlin', nn.LeakyReLU(0.2))
 
-        # self.add_module('conv', Conv2dNorm('',in_channels, growth_rate, 3, padding=1, bias=bias,
-        #                                     pixel_norm=pixel_norm, spectral_norm=spectral_norm))
+        self.add_module('conv', Conv2dNorm('',in_channels, growth_rate, 3, padding=1, bias=bias,
+                                            pixel_norm=pixel_norm, spectral_norm=spectral_norm))
 
-        self.add_module('conv', EqualConv2d('', in_channels, growth_rate, 3, padding=1, bias=bias))
+        # self.add_module('conv', EqualConv2d('', in_channels, growth_rate, 3, padding=1, bias=bias))
 
     def forward(self, x):
         return super().forward(x)

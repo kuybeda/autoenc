@@ -47,8 +47,6 @@ class Session:
 
         self.encoder    = nn.DataParallel(Encoder(args.nz).cuda())
         self.generator  = nn.DataParallel(Generator(args.nz).cuda())
-        # self.attn       = nn.DataParallel(Attention(args.nz).cuda())
-        # self.g_running  = nn.DataParallel(Generator(args.nz).cuda())
         self.critic     = nn.DataParallel(Critic(args.nz).cuda())
         print("Using ", torch.cuda.device_count(), " GPUs!")
         self.reset_opt()
