@@ -10,9 +10,9 @@ cudnn.benchmark = True
 args     = config.get_config()
 
 def critic_grad_penalty(critic, x, fake_x, batch, phase, alpha, grad_norm):
-    eps     = torch.rand(batch, 1, 1, 1).cuda()
-    x_hat   = eps * x.data + (1 - eps) * fake_x.data
-    x_hat   = Variable(x_hat, requires_grad=True)
+    eps         = torch.rand(batch, 1, 1, 1).cuda()
+    x_hat       = eps * x.data + (1 - eps) * fake_x.data
+    x_hat       = Variable(x_hat, requires_grad=True)
     hat_predict = critic(x_hat, x, phase, alpha)
     grad_x_hat  = grad(outputs=hat_predict.sum(), inputs=x_hat, create_graph=True)[0]
     # Push the gradients of the interpolated samples towards 1
@@ -20,20 +20,17 @@ def critic_grad_penalty(critic, x, fake_x, batch, phase, alpha, grad_norm):
     return grad_penalty
 
 def autoenc_grad_norm(encoder, generator, x, phase, alpha):
-    # eps     = torch.rand(batch, 1, 1, 1).cuda()
-    # x_hat   = eps * x.data + (1 - eps) * fake_x.data
     x_hat        = Variable(x, requires_grad=True)
     z_hat        = encoder(x_hat, phase, alpha)
     fake_x_hat   = generator(z_hat, phase, alpha)
     err_x_hat    = utils.mismatch(fake_x_hat, x_hat, args.match_x_metric)
     grad_x_hat   = grad(outputs=err_x_hat.sum(), inputs=x_hat, create_graph=True)[0]
     grad_norm    = grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1)
-    # grad_penalty = ((grad_norm - 1)**2).mean()
     return grad_norm
 
-def updateModels(x, session):
+def updateModels(batch, session):
     encoder, generator, critic = session.encoder, session.generator, session.critic
-    batch,alpha,phase = session.cur_batch(), session.alpha, session.phase
+    batch_size,alpha,phase = session.cur_batch(), session.alpha, session.phase
     stats, losses  = {},[]
     utils.requires_grad(encoder, True)
     utils.requires_grad(generator, True)
@@ -41,6 +38,7 @@ def updateModels(x, session):
     encoder.zero_grad()
     generator.zero_grad()
 
+    x           = batch[0]
     real_z      = encoder(x, phase, alpha)
     fake_x      = generator(real_z, phase, alpha)
 
@@ -101,7 +99,7 @@ def updateModels(x, session):
     C_loss      = cf - cr + torch.abs(cf + cr)
 
     grad_norm   = autoenc_grad_norm(encoder, generator, x, phase, alpha).mean()
-    grad_loss   = critic_grad_penalty(critic, x, fake_x, batch, phase, alpha, grad_norm)
+    grad_loss   = critic_grad_penalty(critic, x, fake_x, batch_size, phase, alpha, grad_norm)
     stats['grad_loss']  = grad_loss.data
     losses.append(grad_loss)
 
@@ -129,10 +127,9 @@ def train(session):
 
     while session.sample_i < session.total_steps:
         # get data
-        x     = session.get_next_train_batch()
+        batch = session.get_next_train_batch()
         # update networks
-        stats = updateModels(x, session)
-        # stats.update(updateC(x, session))
+        stats = updateModels(batch, session)
 
         # show and save statistics to tensorboard
         session.handle_stats(stats)

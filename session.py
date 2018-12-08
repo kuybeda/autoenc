@@ -60,11 +60,9 @@ class Session:
         torch.cuda.manual_seed_all(args.manual_seed)
 
         # import a custom data loader
-        Datawrapper = getattr(__import__(args.datamodule, fromlist=[None]),args.datawrapper)
-
-        # self.train_data_loader  = data.get_loader(args.train_path)
+        Datawrapper      = getattr(__import__(args.datamodule, fromlist=[None]),args.datawrapper)
         self.train_data  = Datawrapper(args.train_path, args.gpu_count)
-        self.epoch_len  = self.train_data.epoch_len() # len(self.train_data_loader(1, 4).dataset)
+        self.epoch_len   = self.train_data.epoch_len() # len(self.train_data_loader(1, 4).dataset)
         self.test_data   = Datawrapper(args.test_path, args.gpu_count) #  = data.get_loader(args.test_path)
 
     def load_checkpoint(self):
@@ -124,30 +122,10 @@ class Session:
     def init_train_data(self):
         batch_size, alpha, res, phase = self.cur_batch(), self.alpha, self.cur_res(), self.phase
         self.train_data.init_epoch(batch_size, alpha, res, phase)
-        # self.train_dataset = data.Utils.sample_data2(self.train_data_loader, batch, alpha, res, phase )
-        # self.train_dataset = self.train_data.sample_data(batch, alpha, res, phase)
-
-    # def init_test_dataset(self, batch_size):
-    #     alpha, res, phase  = self.cur_batch(), self.alpha, self.cur_res(), self.phase
-    #     self.test_dataset  = self.test_data.sample_data(batch_size, alpha, res, phase)
 
     def get_next_train_batch(self):
         # batch, self.train_dataset = self.get_next_batch(self.train_data, self.train_dataset)
         return self.train_data.next_batch()
-
-    # def get_next_test_batch(self):
-    #     batch,self.test_dataset = self.get_next_batch(self.test_data, self.test_dataset)
-    #     return batch
-
-    # def get_next_batch(self, data, dataset):
-    #     try:
-    #         real_image, _ = next(dataset)
-    #     except (OSError, StopIteration):
-    #         # restart dataset if epoch ended
-    #         alpha, res, phase   = self.alpha, self.cur_res(), self.phase
-    #         dataset             = data.sample_data(batch_size, alpha, res, phase)
-    #         real_image, _       = next(dataset)
-    #     return Variable(real_image).cuda(async=(args.gpu_count > 1)), dataset
 
     def handle_stats(self,stats):
         #  Display Statistics
@@ -245,6 +223,27 @@ class Session:
                 print('Start from iteration {}'.format(self.sample_i))
 
 ########### JUNK ############################
+
+    # def get_next_test_batch(self):
+    #     batch,self.test_dataset = self.get_next_batch(self.test_data, self.test_dataset)
+    #     return batch
+
+    # def get_next_batch(self, data, dataset):
+    #     try:
+    #         real_image, _ = next(dataset)
+    #     except (OSError, StopIteration):
+    #         # restart dataset if epoch ended
+    #         alpha, res, phase   = self.alpha, self.cur_res(), self.phase
+    #         dataset             = data.sample_data(batch_size, alpha, res, phase)
+    #         real_image, _       = next(dataset)
+    #     return Variable(real_image).cuda(async=(args.gpu_count > 1)), dataset
+        # self.train_dataset = data.Utils.sample_data2(self.train_data_loader, batch, alpha, res, phase )
+        # self.train_dataset = self.train_data.sample_data(batch, alpha, res, phase)
+
+    # def init_test_dataset(self, batch_size):
+    #     alpha, res, phase  = self.cur_batch(), self.alpha, self.cur_res(), self.phase
+    #     self.test_dataset  = self.test_data.sample_data(batch_size, alpha, res, phase)
+
 
                 # if args.testonly:
                 #     self.generator = copy.deepcopy(self.g_running)
