@@ -43,7 +43,6 @@ class Model(nn.Module):
 
     def update(self, batch, phase, alpha):
         encoder, generator, critic = self.encoder, self.generator, self.critic
-        # batch_size, alpha, phase = session.cur_batch(), alpha, phase
         stats, losses = {}, []
         utils.requires_grad(encoder, True)
         utils.requires_grad(generator, True)

@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument('--EGlr', type=float, default=0.002, help='Autoencoder learning rate')
     parser.add_argument('--Clr', type=float, default=0.002, help='Critic learning rate')
     parser.add_argument('--images_per_stage', type=int, default=2e5)
-    parser.add_argument('--checkpoint_cycle', type=int, default=100)
+    parser.add_argument('--checkpoint_cycle', type=int, default=1000)
     #################################################################
 
     parser.add_argument('--start_phase', type=int, default=0)
