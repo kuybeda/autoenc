@@ -102,7 +102,7 @@ class Session(nn.Module):
             self.phase += args.phase_offset
             self.alpha = 0.0
             self.kt    = 0.0
-        self.init_train_data()
+        self.init_data()
         self.update_phase()
 
     def update_model(self,batch):
@@ -119,35 +119,32 @@ class Session(nn.Module):
                 self.phase += iteration_levels
                 sample_i_current_stage -= iteration_levels * args.images_per_stage
                 # reinitialize dataset to produce larger images
-                self.init_train_data()
+                self.init_data()
                 print("iteration B alpha={} phase {} will be reduced to 1 and [max]".format(sample_i_current_stage, self.phase))
         # alpha growth 1/4th of the cycle
         self.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage)
 
-    def init_train_data(self):
+    def init_data(self):
         batch_size, alpha, res, phase = self.cur_batch(), self.alpha, self.cur_res(), self.phase
         self.train_data.init_epoch(batch_size, alpha, res, phase)
+        ntestsamples = args.test_cols * args.test_rows
+        self.test_data.init_epoch(ntestsamples, self.alpha, self.cur_res(), self.phase)
 
     def get_next_train_batch(self):
         # batch, self.train_dataset = self.get_next_batch(self.train_data, self.train_dataset)
         return self.train_data.next_batch()
 
     def handle_stats(self,stats):
-        #  Display Statistics
-        xr      = stats['x_err']
-        zr      = stats['z_err']
-        e       = (self.sample_i / float(self.epoch_len))
-        batch   = self.cur_batch()
-        self.pbar.set_description(
-            ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-err {7:.4f}; z-err {8:.4f};').format(\
-                self.batch_count+1, self.sample_i+1, self.phase,
-                batch, self.alpha, self.cur_res(), e, xr, zr)
-            )
+        e           = (self.sample_i / float(self.epoch_len))
+        batch       = self.cur_batch()
+        pbar_description = self.model.pbar_description(stats, batch, self.batch_count, self.sample_i,
+                                                        self.phase, self.alpha, self.cur_res(),e)
+        self.pbar.set_description(pbar_description)
         self.pbar.update(batch)
         # Write data to Tensorboard #
         if args.use_TB:
             for key,val in stats.items():
-                self.writer.add_scalar(key, val, self.sample_i)
+                self.writer.add_scalar(key, val.data, self.sample_i)
             self.writer.add_scalar('LOD', self.phase + self.alpha, self.sample_i)
         elif self.batch_count % 100 == 0:
             print(stats)
@@ -191,9 +188,12 @@ class Session(nn.Module):
                 print('Start from iteration {}'.format(self.sample_i))
 
     def write_tests(self):
-        nsamples = args.test_cols * args.test_rows
-        self.test_data.init_epoch(nsamples, self.alpha, self.cur_res(), self.phase)
+        # nsamples = args.test_cols * args.test_rows
+        # self.test_data.init_epoch(nsamples, self.alpha, self.cur_res(), self.phase)
         batch       = self.test_data.next_batch()
+
+        # self.test_data.stop_batches()
+
         out_ims     = self.model.dry_run(batch, self.phase, self.alpha)
         sample_dir  = '{}/recon'.format(args.save_dir)
         save_path   = '{}/{}.png'.format(sample_dir, self.sample_i + 1).zfill(6)
@@ -204,7 +204,12 @@ class Session(nn.Module):
 
 ########### JUNK ############################
 
-        # self.encoder    = nn.DataParallel(Encoder(args.nz).cuda())
+# ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-err {7:.4f}; z-err {8:.4f};').format(\
+#     self.batch_count+1, self.sample_i+1, self.phase, batch, self.alpha, self.cur_res(), e, xr, zr)
+# )
+
+
+# self.encoder    = nn.DataParallel(Encoder(args.nz).cuda())
         # self.generator  = nn.DataParallel(Generator(args.nz).cuda())
         # self.critic     = nn.DataParallel(Critic(args.nz).cuda())
 

@@ -6,6 +6,9 @@ import  os
 from    PIL import Image
 from    custom_transform import NRandomCrop
 from    torchvision.transforms import functional as F
+import  multiprocessing
+import  imageio
+import  numpy as np
 from    myplotlib import show_planes,imshow,clf
 
 def mix_batch(batch,transform,alpha):
@@ -24,35 +27,51 @@ class PairDataWrapper(DataWrapper):
     ''' Data wrapper for RGB and FIR image pairs '''
     def __init__(self, datapath, gpucount):
         super().__init__(datapath, gpucount)
-        self.loaders = PairDataWrapper.get_loaders(datapath, gpucount)
+        # ncores = multiprocessing.cpu_count()
+        self.loaders = PairDataWrapper.get_loaders(datapath, gpucount, num_workers=4)
 
     ## implementation of abstract functions
     @staticmethod
     def get_loaders(path, gpucount, num_workers = 4, *args, **kwargs):
         def loaders(transform, batch_size):
-            rgb_set     = datasets.ImageFolder(os.path.join(path, 'RGB'), transform=transform)
-            fir_set     = datasets.ImageFolder(os.path.join(path, 'FIR'), transform=transform)
+
+            def png_reader(fname):
+                im  = np.float32(imageio.imread(fname))
+                im -= im.mean()
+                return Image.fromarray(im/8192.0) # convert to PIL with range roughy [-1,1]
+
+            def rgb_reader(fname):
+                im  = np.float32(imageio.imread(fname))
+                im  = np.dot(im[...,:3], [0.299, 0.587, 0.114]) # to grayscale
+                im -= im.mean()
+                return Image.fromarray(im/128.0) # roughly to [-1,1]
+
+            rgb_set     = datasets.DatasetFolder(os.path.join(path, 'RGB'), loader=rgb_reader,
+                                                 extensions=['.jpg'], transform=transform)
+
+            fir_set     = datasets.DatasetFolder(os.path.join(path, 'FIR'), loader=png_reader,
+                                                 extensions = ['.png'], transform=transform)
+
             rgb_loader  = DataLoader(rgb_set, shuffle=True, batch_size=batch_size,
                                      num_workers=num_workers, drop_last=True,
                                      pin_memory=(gpucount>1),collate_fn=collate_fn)
+
             fir_loader  = DataLoader(fir_set, shuffle=True, batch_size=batch_size,
                                      num_workers=num_workers, drop_last=True,
                                      pin_memory=(gpucount>1),collate_fn=collate_fn)
+
             return {'RGB':rgb_loader,'FIR':fir_loader}
         return loaders
 
     def reset_epoch(self, batch_size, alpha, res, phase):
-        N_RANDOM_CROPS = 4
+        N_RANDOM_CROPS = 8
         transform = transforms.Compose([
-            transforms.functional.to_grayscale,
             NRandomCrop(size=128,n=N_RANDOM_CROPS),
-            transforms.Lambda(lambda crops: [F.resize(crop,res) for crop in crops] )
-        ])
+            transforms.Lambda(lambda crops: [F.resize(crop,res) for crop in crops] )])
+
         loaders = self.loaders(transform, batch_size=batch_size//N_RANDOM_CROPS)
-        tresize = transforms.Compose([transforms.Resize(res),transforms.ToTensor()])
 
         for batch in zip(loaders['RGB'],loaders['FIR']):
-            # rgb_fir_batch = (item[0][0],item[1][0]) # don't use labels here
             if alpha == 1.0 or phase == 0:
                 yield batch
             else:
@@ -73,6 +92,8 @@ class PairDataWrapper(DataWrapper):
         return min(len(loaders['RGB'].dataset),len(loaders['FIR'].dataset))
 
 ############ JUNK ################################
+# transforms.functional.to_grayscale,
+# tresize = transforms.Compose([transforms.Resize(res),transforms.ToTensor()])
 
 # if __name__ == '__main__':
 #     # flatten dataset subdirectory structure

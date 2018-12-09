@@ -64,7 +64,7 @@ class Model(nn.Module):
         else:
             with torch.no_grad():
                 err_x = utils.mismatch(fake_x, x, args.match_x_metric)
-        stats['x_err'] = err_x.data
+        stats['x_err'] = err_x
 
         if args.use_z_metric:
             # cyclic match z E_x||e(g(e(x))) - e(x)||^2
@@ -75,7 +75,7 @@ class Model(nn.Module):
             with torch.no_grad():
                 fake_z = encoder(fake_x, phase, alpha)
                 err_z = utils.mismatch(real_z, fake_z, args.match_z_metric)
-        stats['z_err'] = err_z.data
+        stats['z_err'] = err_z
 
         cls_fake = critic(fake_x, x, phase, alpha)
 
@@ -85,7 +85,7 @@ class Model(nn.Module):
         G_loss = -(cls_fake * (cls_real.detach() > cls_fake.detach()).float()).mean()
 
         # Gloss      = -torch.log(cls_fake).mean()
-        stats['G_loss'] = G_loss.data
+        stats['G_loss'] = G_loss
         # warm up critic loss to kick in with alpha
         losses.append(alpha * G_loss)
 
@@ -114,13 +114,13 @@ class Model(nn.Module):
 
         grad_norm = autoenc_grad_norm(encoder, generator, x, phase, alpha).mean()
         grad_loss = critic_grad_penalty(critic, x, fake_x, batch_size, phase, alpha, grad_norm)
-        stats['grad_loss'] = grad_loss.data
+        stats['grad_loss'] = grad_loss
         losses.append(grad_loss)
 
         # C_loss      = -torch.log(1.0 - cls_fake).mean() - torch.log(cls_real).mean()
 
-        stats['cls_fake'] = cls_fake.mean().data
-        stats['cls_real'] = cls_real.mean().data
+        stats['cls_fake'] = cls_fake.mean()
+        stats['cls_real'] = cls_real.mean()
         stats['C_loss'] = C_loss.data
 
         # Propagate critic losses
@@ -131,6 +131,11 @@ class Model(nn.Module):
         # Apply critic gradient
         self.optimizerC.step()
         return stats
+
+    def pbar_description(self,stats,batch,batch_count,sample_i,phase,alpha,res,epoch):
+        xr = stats['x_err']
+        return ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-err {7:.4f};').format(\
+                batch_count+1, sample_i+1, phase, batch, alpha, res, epoch, xr)
 
     def dry_run(self, batch, phase, alpha):
         ''' dry run model on the batch '''

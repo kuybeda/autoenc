@@ -25,8 +25,8 @@ def parse_args():
     ################################################################
     parser.add_argument('--EGlr', type=float, default=0.002, help='Autoencoder learning rate')
     parser.add_argument('--Clr', type=float, default=0.002, help='Critic learning rate')
-    parser.add_argument('--images_per_stage', type=int, default=2e5)
-    parser.add_argument('--checkpoint_cycle', type=int, default=1000)
+    parser.add_argument('--images_per_stage', type=int, default=1e5)
+    parser.add_argument('--checkpoint_cycle', type=int, default=100)
     #################################################################
 
     parser.add_argument('--start_phase', type=int, default=0)
@@ -41,8 +41,8 @@ def parse_args():
     parser.add_argument('--dump_trainingset_dir', type=str, default='.')
     parser.add_argument('--interpolate_N', type=int, default=0, help='Carry out the given number of interpolation runs (between 4 input images)')
 
+    parser.add_argument('--test_cols', type=int, default=24, help='The number of columns to show')
     parser.add_argument('--test_rows', type=int, default=5,  help='The number of rows to show')
-    parser.add_argument('--test_cols', type=int, default=20, help='The number of columns to show')
 
     return parser.parse_args()
 

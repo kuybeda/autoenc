@@ -2,7 +2,7 @@ import  torch
 from    torch import nn
 from    torch.nn import functional as F
 from    cnnutils import EqualConv2d, DenseBlock, SpectralNormConv2d
-from    torch.autograd import Variable, grad
+# from    torch.autograd import Variable, grad
 
 class Generator(nn.Module):
     def __init__(self, nz, pixel_norm=False, spectral_norm=True):

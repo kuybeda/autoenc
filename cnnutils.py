@@ -5,8 +5,7 @@ import  config
 from    torch.nn import init
 from    torch.autograd import Variable, grad
 # import  utils
-
-args   = config.get_config()
+# args   = config.get_config()
 
 class SpectralNorm:
     def __init__(self, name):
@@ -18,7 +17,8 @@ class SpectralNorm:
         size = weight.size()
         weight_mat = weight.contiguous().view(size[0], -1)
         if weight_mat.is_cuda:
-            u = u.cuda(async=(args.gpu_count>1))
+            # u = u.cuda(async=(args.gpu_count>1))
+            u = u.cuda(non_blocking=True)
         v = weight_mat.t() @ u
         v = v / v.norm()
         u = weight_mat @ v
@@ -89,6 +89,7 @@ class PixelNorm(nn.Module):
         super().__init__()
 
     def forward(self, input):
+        # (input.norm(2, dim=1, keepdim=True) + 1e-8)  #
         return input / torch.sqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
 
 class SpectralNormConv2d(nn.Module):
@@ -175,46 +176,48 @@ class DenseBlock(nn.Module):
                 x = torch.cat([x, out], 1) # 1 = channel axis
             return x
 
-class ConvBlock(nn.Module):
-    def __init__(self, in_channel, out_channel, kernel_size,
-                 padding, kernel_size2=None, padding2=None,
-                 pixel_norm=False, spectral_norm=False):
 
-        super().__init__()
-
-        pad1 = padding
-        pad2 = padding
-        if padding2 is not None:
-            pad2 = padding2
-
-        kernel1 = kernel_size
-        kernel2 = kernel_size
-        if kernel_size2 is not None:
-            kernel2 = kernel_size2
-
-        if spectral_norm:
-            self.conv = nn.Sequential(SpectralNormConv2d(in_channel, out_channel, kernel1, padding=pad1),
-                                      nn.LeakyReLU(0.2),
-                                      SpectralNormConv2d(out_channel, out_channel, kernel2, padding=pad2),
-                                      nn.LeakyReLU(0.2))
-
-        elif pixel_norm:
-            self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
-                                      PixelNorm(),
-                                      nn.LeakyReLU(0.2),
-                                      EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
-                                      PixelNorm(),
-                                      nn.LeakyReLU(0.2))
-
-        else:
-            self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
-                                      nn.LeakyReLU(0.2),
-                                      EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
-                                      nn.LeakyReLU(0.2))
-                                      # nn.PReLU())
-
-    def forward(self, input):
-        return self.conv(input)
+########### JUNK ########################################
+# class ConvBlock(nn.Module):
+#     def __init__(self, in_channel, out_channel, kernel_size,
+#                  padding, kernel_size2=None, padding2=None,
+#                  pixel_norm=False, spectral_norm=False):
+#
+#         super().__init__()
+#
+#         pad1 = padding
+#         pad2 = padding
+#         if padding2 is not None:
+#             pad2 = padding2
+#
+#         kernel1 = kernel_size
+#         kernel2 = kernel_size
+#         if kernel_size2 is not None:
+#             kernel2 = kernel_size2
+#
+#         if spectral_norm:
+#             self.conv = nn.Sequential(SpectralNormConv2d(in_channel, out_channel, kernel1, padding=pad1),
+#                                       nn.LeakyReLU(0.2),
+#                                       SpectralNormConv2d(out_channel, out_channel, kernel2, padding=pad2),
+#                                       nn.LeakyReLU(0.2))
+#
+#         elif pixel_norm:
+#             self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
+#                                       PixelNorm(),
+#                                       nn.LeakyReLU(0.2),
+#                                       EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
+#                                       PixelNorm(),
+#                                       nn.LeakyReLU(0.2))
+#
+#         else:
+#             self.conv = nn.Sequential(EqualConv2d(in_channel, out_channel, kernel1, padding=pad1),
+#                                       nn.LeakyReLU(0.2),
+#                                       EqualConv2d(out_channel, out_channel, kernel2, padding=pad2),
+#                                       nn.LeakyReLU(0.2))
+#                                       # nn.PReLU())
+#
+#     def forward(self, input):
+#         return self.conv(input)
 
 
 
