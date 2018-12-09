@@ -95,7 +95,7 @@ class Model(nn.Module):
     def __init__(self):
         super().__init__()
         nz           = args.nz
-        style_prop   = 0.25 # proportion of channels for style
+        style_prop   = 0.125 # proportion of channels for style
 
         self.enc     = DualEncoder(nz)
         self.gen     = DualGenerator(nz)
@@ -138,7 +138,7 @@ class Model(nn.Module):
         return [loss_x, alpha*loss_crt1, alpha*loss_crt2], x1_x1.detach(), x1_x2.detach()
 
     @staticmethod
-    def crt_loss_balanced(cf,cr):
+    def crt_loss_balanced(cr,cf):
         return cf - cr + torch.abs(cf + cr)
 
     @staticmethod
@@ -147,13 +147,13 @@ class Model(nn.Module):
         crt_auto_fake   = crt(x_auto_fake, x, phase, alpha)
         crt_mix_fake    = crt(x_mix_fake, x, phase, alpha)
         cfa, cfm, cr    = crt_auto_fake.mean(), crt_mix_fake.mean(), crt_real.mean()
-        return [Model.crt_loss_balanced(cfa,cr), Model.crt_loss_balanced(cfm,cr)], cr, cfa, cfm,
+        return [Model.crt_loss_balanced(cr,cfa), Model.crt_loss_balanced(cr,cfm)], cr, cfa, cfm,
 
     @staticmethod
     def crt_loss_cross_domain(crt, cr, x_fake, phase, alpha):
         crt_fake    = crt(x_fake, x_fake, phase, alpha)
         cf          = crt_fake.mean()
-        return [Model.crt_loss_balanced(cf,cr)], cf
+        return [Model.crt_loss_balanced(cr,cf)], cf
 
     @staticmethod
     def autoenc_grad_norm(autoenc, x, phase, alpha):
@@ -278,9 +278,9 @@ class Model(nn.Module):
         return stats
 
     def pbar_description(self,stats,batch,batch_count,sample_i,phase,alpha,res,epoch):
-        return ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; L1_fir {7:.4f}; L1_rgb {8:.4f}:').format(\
+        return ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; L1_mix_fir {7:.4f}; L1_mix_rgb {8:.4f}:').format(\
                 batch_count+1, sample_i+1, phase, batch, alpha, res, epoch,
-                stats['L1_auto_fir'], stats['L1_auto_rgb'])
+                stats['L1_mix_fir'], stats['L1_mix_rgb'])
 
     def dry_run(self, batch, phase, alpha):
         ''' dry run model on the batch '''
@@ -296,7 +296,7 @@ class Model(nn.Module):
         fir_rgb, fir_fir = self.mixcod.fir(fir,phase,alpha)
 
         # join source and reconstructed images side by side
-        out_ims     = torch.cat((rgb,rgb_rgb,rgb_fir,fir,fir_fir,fir_rgb), 1).view(6*batch_size,1,rgb.shape[-2],rgb.shape[-1])
+        out_ims    = torch.cat((rgb,rgb_rgb,rgb_fir,fir,fir_fir,fir_rgb), 1).view(6*batch_size,1,rgb.shape[-2],rgb.shape[-1])
 
         self.enc.train()
         self.gen.train()

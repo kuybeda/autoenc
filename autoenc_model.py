@@ -154,14 +154,14 @@ class Model(nn.Module):
         # join source and reconstructed images side by side
         out_ims     = torch.cat((x,reco_ims), 1).view(2*batch_size,1,reco_ims.shape[-2],reco_ims.shape[-1])
 
-        # utils.requires_grad(generator, True)
-        # utils.requires_grad(encoder, True)
         encoder.train()
         generator.train()
         return out_ims
 
 
 # ############# JUNK #########################
+        # utils.requires_grad(generator, True)
+        # utils.requires_grad(encoder, True)
 
     # def save(self,path):
     #     torch.save(self.state_dict(),path)

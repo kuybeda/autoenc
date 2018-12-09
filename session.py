@@ -43,13 +43,14 @@ class Session(nn.Module):
         # 3) Sample from the g_running, not from the latest generator
         # 4) You may need to warm up the g_running by running evaluate.reconstruction_dryrun() first
 
-        self.alpha      = -1
-        self.kt         = 0.0
-        self.sample_i   = min(args.start_iteration, 0)
-        self.phase      = args.start_phase
+        self.alpha       = -1
+        self.kt          = 0.0
+        self.sample_i    = min(args.start_iteration, 0)
+        self.phase       = args.start_phase
         self.total_steps = args.total_kimg * 1000
-        Model           = getattr(__import__(args.modelmodule, fromlist=[None]),'Model')
-        self.model      = Model()
+        Model            = getattr(__import__(args.modelmodule, fromlist=[None]),'Model')
+        # self.add_module('model',Model())
+        self.model       = Model()
 
         print("Using ", torch.cuda.device_count(), " GPUs!")
         self.setup()
@@ -158,14 +159,15 @@ class Session(nn.Module):
     def save_checkpoint(self):
         if self.batch_count % args.checkpoint_cycle == 0:
             for postfix in {'latest', str(self.sample_i).zfill(6)}:
-                self.save('{}/{}_state'.format(args.checkpoint_dir, postfix))
+                path = '{}/{}_state'.format(args.checkpoint_dir, postfix)
+                torch.save({'session': self.state_dict()}, path)
             print("\nCheckpointed to {}".format(self.sample_i))
 
     def finish(self):
         self.pbar.close()
 
-    def save(self, path):
-        torch.save({'session':self.model.state_dict()},path)
+    # def save(self, path):
+    #     torch.save({'session':self.state_dict()},path)
 
     def load(self, path):
         checkpoint = torch.load(path)
@@ -188,21 +190,21 @@ class Session(nn.Module):
                 print('Start from iteration {}'.format(self.sample_i))
 
     def write_tests(self):
-        # nsamples = args.test_cols * args.test_rows
-        # self.test_data.init_epoch(nsamples, self.alpha, self.cur_res(), self.phase)
         batch       = self.test_data.next_batch()
-
-        # self.test_data.stop_batches()
-
         out_ims     = self.model.dry_run(batch, self.phase, self.alpha)
+
         sample_dir  = '{}/recon'.format(args.save_dir)
         save_path   = '{}/{}.png'.format(sample_dir, self.sample_i + 1).zfill(6)
+
         mkdir_assure(sample_dir)
         print('\nSaving a new collage ...')
-        torchvision.utils.save_image(out_ims, save_path, nrow=args.test_cols, normalize=True, padding=0, scale_each=False)
+        torchvision.utils.save_image(out_ims, save_path, nrow=args.test_cols, normalize=True, padding=0, scale_each=True)
 
 
 ########### JUNK ############################
+        # nsamples = args.test_cols * args.test_rows
+        # self.test_data.init_epoch(nsamples, self.alpha, self.cur_res(), self.phase)
+        # self.test_data.stop_batches()
 
 # ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; x-err {7:.4f}; z-err {8:.4f};').format(\
 #     self.batch_count+1, self.sample_i+1, self.phase, batch, self.alpha, self.cur_res(), e, xr, zr)

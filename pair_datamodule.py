@@ -27,24 +27,27 @@ class PairDataWrapper(DataWrapper):
     ''' Data wrapper for RGB and FIR image pairs '''
     def __init__(self, datapath, gpucount):
         super().__init__(datapath, gpucount)
-        # ncores = multiprocessing.cpu_count()
-        self.loaders = PairDataWrapper.get_loaders(datapath, gpucount, num_workers=4)
+        ncores = multiprocessing.cpu_count()
+        self.loaders = PairDataWrapper.get_loaders(datapath, gpucount, num_workers=ncores)
 
     ## implementation of abstract functions
     @staticmethod
-    def get_loaders(path, gpucount, num_workers = 4, *args, **kwargs):
+    def get_loaders(path, gpucount, num_workers, *args, **kwargs):
         def loaders(transform, batch_size):
 
             def png_reader(fname):
-                im  = np.float32(imageio.imread(fname))
+                im  = np.float32(imageio.imread(fname)) # 640x480
+                im  = im[:400] # 640 x 400
                 im -= im.mean()
-                return Image.fromarray(im/8192.0) # convert to PIL with range roughy [-1,1]
+                impl = Image.fromarray(im/8192.0) # convert to PIL with range roughy [-1,1]
+                return impl.resize((320,200),Image.BILINEAR)
 
             def rgb_reader(fname):
-                im  = np.float32(imageio.imread(fname))
-                im  = np.dot(im[...,:3], [0.299, 0.587, 0.114]) # to grayscale
-                im -= im.mean()
-                return Image.fromarray(im/128.0) # roughly to [-1,1]
+                im   = np.float32(imageio.imread(fname)) # 1280 x 800
+                im   = np.dot(im[...,:3], [0.299, 0.587, 0.114]) # to grayscale
+                im  -= im.mean()
+                impl = Image.fromarray(im/128.0)
+                return impl.resize((320,200),Image.BILINEAR) # roughly to [-1,1]
 
             rgb_set     = datasets.DatasetFolder(os.path.join(path, 'RGB'), loader=rgb_reader,
                                                  extensions=['.jpg'], transform=transform)
@@ -67,7 +70,7 @@ class PairDataWrapper(DataWrapper):
         N_RANDOM_CROPS = 8
         transform = transforms.Compose([
             NRandomCrop(size=128,n=N_RANDOM_CROPS),
-            transforms.Lambda(lambda crops: [F.resize(crop,res) for crop in crops] )])
+            transforms.Lambda(lambda crops: [F.resize(crop,res,Image.BILINEAR) for crop in crops] )])
 
         loaders = self.loaders(transform, batch_size=batch_size//N_RANDOM_CROPS)
 
@@ -78,7 +81,7 @@ class PairDataWrapper(DataWrapper):
                 tprev = transforms.Compose([
                     transforms.ToPILImage(mode='F'),
                     # Downsample
-                    transforms.Resize(res // 2),
+                    transforms.Resize(res // 2, Image.BILINEAR),
                     # Upsample with linear interpolation
                     transforms.Resize(res, interpolation=Image.BILINEAR), #Image.NEAREST
                     transforms.ToTensor(),
