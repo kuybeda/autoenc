@@ -2,7 +2,36 @@ import  torch
 from    torch import nn
 from    torch.nn import functional as F
 from    cnnutils import EqualConv2d, DenseBlock, SpectralNormConv2d
+from    torch.optim import Optimizer
 # from    torch.autograd import Variable, grad
+
+class OptimModule(nn.Module):
+    ''' Module that returns and loads dictionary of all optimizers'''
+    def __init__(self):
+        super().__init__()
+
+    def __get_all_optimizers(self):
+        optimizers = {}
+        members = [attr for attr in dir(self) if not callable(getattr(self, attr)) and not attr.startswith("__")]
+        for attr in members:
+            m = getattr(self,attr)
+            if isinstance(m,Optimizer):
+                optimizers.update({attr:m})
+        return optimizers
+
+    def state_dict(self):
+        ''' add optimizers state dict to module state dict '''
+        sd = {'parent':super().state_dict()}
+        for key,optim in self.__get_all_optimizers().items():
+            sd.update({key:optim.state_dict()})
+        return sd
+
+    def load_state_dict(self, state_dict, strict=True):
+        # load parent
+        super().load_state_dict(state_dict['parent'])
+        for key,optim in self.__get_all_optimizers().items():
+            optim.load_state_dict(state_dict[key])
+
 
 class Generator(nn.Module):
     def __init__(self, nz, pixel_norm=False, spectral_norm=True):
@@ -45,7 +74,8 @@ class Generator(nn.Module):
         for i, (conv, to_gray) in enumerate(zip(self.progression, self.to_gray)):
 
             if i > 0 and step > 0:
-                upsample = F.interpolate(out, scale_factor=2, mode='nearest') #, align_corners=False)
+                # upsample = F.interpolate(out, scale_factor=2, mode='nearest') #, align_corners=False)
+                upsample = F.interpolate(out, scale_factor=2, mode='bilinear', align_corners=False)
                 out = conv(upsample)
             else:
                 out = conv(out)

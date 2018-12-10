@@ -23,10 +23,10 @@ def parse_args():
     parser.add_argument('--save_dir', default='/data/autoencoder/tests', help='folder to output images')
 
     ################################################################
-    parser.add_argument('--EGlr', type=float, default=0.001, help='Autoencoder learning rate')
+    parser.add_argument('--EGlr', type=float, default=0.0005, help='Autoencoder learning rate')
     parser.add_argument('--Clr', type=float, default=0.001, help='Critic learning rate')
     parser.add_argument('--images_per_stage', type=int, default=5e5)
-    parser.add_argument('--checkpoint_cycle', type=int, default=1000)
+    parser.add_argument('--checkpoint_cycle', type=int, default=200)
     #################################################################
 
     parser.add_argument('--start_phase', type=int, default=0)
@@ -42,7 +42,7 @@ def parse_args():
     parser.add_argument('--interpolate_N', type=int, default=0, help='Carry out the given number of interpolation runs (between 4 input images)')
 
     parser.add_argument('--test_cols', type=int, default=24, help='The number of columns to show')
-    parser.add_argument('--test_rows', type=int, default=5,  help='The number of rows to show')
+    parser.add_argument('--test_rows', type=int, default=2,  help='The number of rows to show')
 
     return parser.parse_args()
 

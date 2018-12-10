@@ -1,7 +1,7 @@
 import  torch
 from    torch import nn
 from    math import sqrt
-import  config
+# import  config
 from    torch.nn import init
 from    torch.autograd import Variable, grad
 # import  utils

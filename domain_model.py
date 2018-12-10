@@ -1,4 +1,4 @@
-from    model_utils import Generator, Encoder, Critic
+from    model_utils import Generator, Encoder, Critic, OptimModule
 import  config
 import  torch
 from    torch import nn,optim
@@ -91,11 +91,11 @@ class DualMixCoder(object):
         self.rgb = MixCoder(dualenc.rgb, dualenc.fir, dualgen.rgb, dualgen.fir, style_prop)
         self.fir = MixCoder(dualenc.fir, dualenc.rgb, dualgen.fir, dualgen.rgb, style_prop)
 
-class Model(nn.Module):
+class Model(OptimModule):
     def __init__(self):
         super().__init__()
         nz           = args.nz
-        style_prop   = 0.125 # proportion of channels for style
+        style_prop   = 0.0625 # proportion of channels for style
 
         self.enc     = DualEncoder(nz)
         self.gen     = DualGenerator(nz)
@@ -103,9 +103,9 @@ class Model(nn.Module):
         # param manipulators, don't hold own params
         self.autoenc = DualAutoencoder(self.enc, self.gen)
         self.mixcod  = DualMixCoder(self.enc, self.gen, style_prop)
-        self.reset_optimization()
+        self.init_optimizers()
 
-    def reset_optimization(self):
+    def init_optimizers(self):
         self.optimE = optim.Adam(self.enc.parameters(), args.EGlr, betas=(0.0, 0.99))
         self.optimG = optim.Adam(self.gen.parameters(), args.EGlr, betas=(0.0, 0.99))
         self.optimC = optim.Adam(self.crt.parameters(), args.Clr, betas=(0.0, 0.99))

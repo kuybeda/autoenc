@@ -17,11 +17,7 @@ args   = config.get_config()
 
 def batch_size(reso):
     if args.gpu_count == 1:
-        save_memory = False
-        if not save_memory:
-            batch_table = {4: 128, 8: 128, 16: 128, 32: 64, 64: 32, 128: 16, 256: 8, 512: 4, 1024: 1}
-        else:
-            batch_table = {4: 128, 8: 128, 16: 128, 32: 32, 64: 16, 128: 4, 256: 2, 512: 2, 1024: 1}
+        batch_table = {4: 512, 8: 256, 16: 128, 32: 64, 64: 32, 128: 16, 256: 8, 512: 4, 1024: 1}
     elif args.gpu_count == 2:
         batch_table = {4: 256, 8: 256, 16: 256, 32: 128, 64: 64, 128: 32, 256: 16, 512: 8, 1024: 2}
     elif args.gpu_count == 4:
@@ -31,7 +27,7 @@ def batch_size(reso):
     else:
         assert (False)
 
-    return batch_table[reso]*2
+    return batch_table[reso]
 
 class Session(nn.Module):
 
@@ -48,6 +44,7 @@ class Session(nn.Module):
         self.sample_i    = min(args.start_iteration, 0)
         self.phase       = args.start_phase
         self.total_steps = args.total_kimg * 1000
+
         Model            = getattr(__import__(args.modelmodule, fromlist=[None]),'Model')
         # self.add_module('model',Model())
         self.model       = Model()
@@ -67,14 +64,6 @@ class Session(nn.Module):
         self.train_data  = Datawrapper(args.train_path, args.gpu_count)
         self.epoch_len   = self.train_data.epoch_len() # len(self.train_data_loader(1, 4).dataset)
         self.test_data   = Datawrapper(args.test_path, args.gpu_count) #  = data.get_loader(args.test_path)
-
-    def load_checkpoint(self):
-        checkname = os.path.join(args.checkpoint_dir, 'latest_state')
-        if os.path.exists(checkname):
-            self.load(checkname)
-        else:
-            print("Couldn't load previous session, create new!")
-            self.create()
 
     def cur_res(self):
         return  4 * 2 ** self.phase
@@ -121,7 +110,7 @@ class Session(nn.Module):
                 sample_i_current_stage -= iteration_levels * args.images_per_stage
                 # reinitialize dataset to produce larger images
                 self.init_data()
-                print("iteration B alpha={} phase {} will be reduced to 1 and [max]".format(sample_i_current_stage, self.phase))
+                print("\ alpha={} phase {} will be reduced to 1 and [max]".format(self.alpha, self.phase))
         # alpha growth 1/4th of the cycle
         self.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage)
 
@@ -156,22 +145,41 @@ class Session(nn.Module):
         self.batch_count += 1
         self.update_phase()
 
+    def finish(self):
+        self.pbar.close()
+
     def save_checkpoint(self):
         if self.batch_count % args.checkpoint_cycle == 0:
             for postfix in {'latest', str(self.sample_i).zfill(6)}:
                 path = '{}/{}_state'.format(args.checkpoint_dir, postfix)
-                torch.save({'session': self.state_dict()}, path)
+                self.save(path)
+                # torch.save({'session': self.state_dict()}, path)
             print("\nCheckpointed to {}".format(self.sample_i))
 
-    def finish(self):
-        self.pbar.close()
+    def save(self, path):
+        torch.save({'iteration': self.sample_i,
+                    'phase': self.phase,
+                    'alpha': self.alpha,
+                    'kt': self.kt,
+                    'model': self.model.state_dict()}, path)
+        # torch.save({'session':self.state_dict()},path)
 
-    # def save(self, path):
-    #     torch.save({'session':self.state_dict()},path)
+    def load_checkpoint(self):
+        checkname = os.path.join(args.checkpoint_dir, 'latest_state')
+        if os.path.exists(checkname):
+            print("Loading previous session %s" % checkname)
+            self.load(checkname)
+        else:
+            print("Couldn't load previous session, create new!")
+            self.create()
 
     def load(self, path):
         checkpoint = torch.load(path)
-        self.load_state_dict(checkpoint['session'])
+        self.sample_i   = int(checkpoint['iteration'])
+        self.phase      = int(checkpoint['phase'])
+        self.alpha      = checkpoint['alpha']
+        self.kt         = checkpoint['kt']
+        self.model.load_state_dict(checkpoint['model'])
 
     def create(self):
         if args.start_iteration <= 0:

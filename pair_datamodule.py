@@ -40,14 +40,17 @@ class PairDataWrapper(DataWrapper):
                 im  = im[:400] # 640 x 400
                 im -= im.mean()
                 impl = Image.fromarray(im/8192.0) # convert to PIL with range roughy [-1,1]
-                return impl.resize((320,200),Image.BILINEAR)
+                return impl.resize((320,200),Image.BILINEAR) # 320 x 200
 
             def rgb_reader(fname):
                 im   = np.float32(imageio.imread(fname)) # 1280 x 800
                 im   = np.dot(im[...,:3], [0.299, 0.587, 0.114]) # to grayscale
                 im  -= im.mean()
-                impl = Image.fromarray(im/128.0)
-                return impl.resize((320,200),Image.BILINEAR) # roughly to [-1,1]
+                impl = Image.fromarray(im/128.0) # roughly to [-1,1]
+                return impl.resize((320,200),Image.BILINEAR) # 320 x 200
+
+            def _init_fn(worker_id):
+                np.random.seed(12 + worker_id)
 
             rgb_set     = datasets.DatasetFolder(os.path.join(path, 'RGB'), loader=rgb_reader,
                                                  extensions=['.jpg'], transform=transform)
@@ -56,11 +59,11 @@ class PairDataWrapper(DataWrapper):
                                                  extensions = ['.png'], transform=transform)
 
             rgb_loader  = DataLoader(rgb_set, shuffle=True, batch_size=batch_size,
-                                     num_workers=num_workers, drop_last=True,
+                                     num_workers=num_workers, drop_last=True, worker_init_fn=_init_fn,
                                      pin_memory=(gpucount>1),collate_fn=collate_fn)
 
             fir_loader  = DataLoader(fir_set, shuffle=True, batch_size=batch_size,
-                                     num_workers=num_workers, drop_last=True,
+                                     num_workers=num_workers, drop_last=True, worker_init_fn=_init_fn,
                                      pin_memory=(gpucount>1),collate_fn=collate_fn)
 
             return {'RGB':rgb_loader,'FIR':fir_loader}
