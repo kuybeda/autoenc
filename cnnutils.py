@@ -121,15 +121,17 @@ class EqualConv2d(nn.Module):
 
 class Conv2dNorm(nn.Sequential):
     def __init__(self, name, in_channels, out_channels, kernel_size, padding,
-                 pixel_norm=False, spectral_norm=False, bias = True):
+                 pixel_norm=False, spectral_norm=False, bias = True, **kwargs):
         super().__init__()
         self.g_name = name
         if spectral_norm:
             self.add_module('conv', SpectralNormConv2d(in_channels, out_channels,
-                                                       kernel_size=kernel_size, padding=padding, bias=bias))
+                                                       kernel_size=kernel_size,
+                                                       padding=padding, bias=bias, **kwargs))
         else:
             self.add_module('conv', EqualConv2d(in_channels, out_channels,
-                                                kernel_size=kernel_size, padding=padding, bias=bias))
+                                                kernel_size=kernel_size,
+                                                padding=padding, bias=bias, **kwargs))
         if pixel_norm:
             self.add_module('norm', PixelNorm())
 
@@ -137,27 +139,27 @@ class Conv2dNorm(nn.Sequential):
         return super().forward(x)
 
 class DenseLayer(nn.Sequential):
-    def __init__(self, name, in_channels, growth_rate, pixel_norm=False, spectral_norm=False, bias = True):
+    def __init__(self, name, in_channels, growth_rate, pixel_norm=False, spectral_norm=False, bias = True, dilation=1):
         super().__init__()
         self.g_name = name
         self.add_module('nonlin', nn.LeakyReLU(0.2))
 
-        self.add_module('conv', Conv2dNorm('',in_channels, growth_rate, 3, padding=1, bias=bias,
-                                            pixel_norm=pixel_norm, spectral_norm=spectral_norm))
-
-        # self.add_module('conv', EqualConv2d('', in_channels, growth_rate, 3, padding=1, bias=bias))
+        self.add_module('conv', Conv2dNorm('',in_channels, growth_rate, 3, padding=dilation, bias=bias,
+                                            pixel_norm=pixel_norm, spectral_norm=spectral_norm, dilation=dilation))
 
     def forward(self, x):
         return super().forward(x)
 
 class DenseBlock(nn.Module):
     def __init__(self, name, in_channels, growth_rate, n_layers, fixed_channels=True, bias=True,
-                 pixel_norm=False, spectral_norm=False):
+                 pixel_norm=False, spectral_norm=False, dilations=[1]):
         super().__init__()
         self.g_name = name
         self.fixed_channels = fixed_channels
         self.layers = nn.ModuleList([DenseLayer(name + 'denselayer_%d/' % i, in_channels + i*growth_rate, growth_rate,
-                                                bias=bias, pixel_norm=pixel_norm, spectral_norm=spectral_norm) for i in range(n_layers)])
+                                                bias=bias, pixel_norm=pixel_norm, spectral_norm=spectral_norm,
+                                                dilation=dilations[min(i,len(dilations)-1)]) \
+                                     for i in range(n_layers)])
     def forward(self, x):
         if self.fixed_channels:
             new_features = []

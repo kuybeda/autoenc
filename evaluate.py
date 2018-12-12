@@ -1,6 +1,6 @@
 
 import  torch
-from    torch.autograd import Variable
+# from    torch.autograd import Variable
 import  torchvision.utils
 
 import  config
@@ -41,7 +41,7 @@ class Utils:
 
         nsamples    = args.test_cols * args.test_rows
         session.test_data.init_epoch(nsamples, alpha, res, phase)
-        input_ims   = session.test_data.next_batch()
+        input_ims   = session.get_next_test_batch() #test_data.next_batch()
 
         real_z      = encoder(input_ims, session.phase, session.alpha)
         reco_ims    = generator(real_z, session.phase, session.alpha).data

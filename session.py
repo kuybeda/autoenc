@@ -1,14 +1,10 @@
-# from    model import Generator, Encoder, Critic
-# from    torch import nn, optim
 from    torch import nn
 import  config
 import  torch
 import  os
 from    datetime import datetime
 import  random
-# import  data
 import  utils
-# from    torch.autograd import Variable #, grad
 from    tqdm import tqdm
 from    filetools import mkdir_assure
 import  torchvision.utils
@@ -17,7 +13,7 @@ args   = config.get_config()
 
 def batch_size(reso):
     if args.gpu_count == 1:
-        batch_table = {4: 512, 8: 256, 16: 128, 32: 64, 64: 32, 128: 16, 256: 8, 512: 4, 1024: 1}
+        batch_table = {4: 512, 8: 256, 16: 96, 32: 32, 64: 8, 128: 16, 256: 8, 512: 4, 1024: 1}
     elif args.gpu_count == 2:
         batch_table = {4: 256, 8: 256, 16: 256, 32: 128, 64: 64, 128: 32, 256: 16, 512: 8, 1024: 2}
     elif args.gpu_count == 4:
@@ -44,7 +40,7 @@ class Session(nn.Module):
         self.sample_i    = min(args.start_iteration, 0)
         self.phase       = args.start_phase
         self.total_steps = args.total_kimg * 1000
-
+        # import a custom model
         Model            = getattr(__import__(args.modelmodule, fromlist=[None]),'Model')
         # self.add_module('model',Model())
         self.model       = Model()
@@ -61,12 +57,12 @@ class Session(nn.Module):
 
         # import a custom data loader
         Datawrapper      = getattr(__import__(args.datamodule, fromlist=[None]),args.datawrapper)
-        self.train_data  = Datawrapper(args.train_path, args.gpu_count)
-        self.epoch_len   = self.train_data.epoch_len() # len(self.train_data_loader(1, 4).dataset)
-        self.test_data   = Datawrapper(args.test_path, args.gpu_count) #  = data.get_loader(args.test_path)
+        self.train_data  = Datawrapper(args.train_path)
+        self.epoch_len   = self.train_data.epoch_len()
+        self.test_data   = Datawrapper(args.test_path)
 
     def cur_res(self):
-        return  4 * 2 ** self.phase
+        return  args.start_res * 2 ** self.phase
 
     def cur_batch(self):
         return batch_size(self.cur_res())
@@ -85,13 +81,6 @@ class Session(nn.Module):
     def init_phase(self):
         # init phase params
         self.batch_count = 0
-        if args.step_offset != 0:
-            if args.step_offset == -1:
-                args.step_offset = self.sample_i
-            print("Step offset is {}".format(args.step_offset))
-            self.phase += args.phase_offset
-            self.alpha = 0.0
-            self.kt    = 0.0
         self.init_data()
         self.update_phase()
 
@@ -99,7 +88,7 @@ class Session(nn.Module):
         return self.model.update(batch,self.phase,self.alpha)
 
     def update_phase(self):
-        steps_in_previous_phases    = max(self.phase * args.images_per_stage, args.step_offset)
+        steps_in_previous_phases    = self.phase * args.images_per_stage
         sample_i_current_stage      = self.sample_i - steps_in_previous_phases
 
         # If we can move to the next phase
@@ -110,19 +99,20 @@ class Session(nn.Module):
                 sample_i_current_stage -= iteration_levels * args.images_per_stage
                 # reinitialize dataset to produce larger images
                 self.init_data()
-                print("\ alpha={} phase {} will be reduced to 1 and [max]".format(self.alpha, self.phase))
+                self.model.reset_optimizers()
+                print("\nStarting phase {}, resolution {}".format(self.phase, self.cur_res()))
         # alpha growth 1/4th of the cycle
         self.alpha = min(1, sample_i_current_stage * 4.0 / args.images_per_stage)
 
     def init_data(self):
-        batch_size, alpha, res, phase = self.cur_batch(), self.alpha, self.cur_res(), self.phase
-        self.train_data.init_epoch(batch_size, alpha, res, phase)
-        ntestsamples = args.test_cols * args.test_rows
-        self.test_data.init_epoch(ntestsamples, self.alpha, self.cur_res(), self.phase)
+        self.train_data.init_epoch(self.cur_batch(), self.cur_res())
+        self.test_data.init_epoch(args.test_cols * args.test_rows, self.cur_res())
 
     def get_next_train_batch(self):
-        # batch, self.train_dataset = self.get_next_batch(self.train_data, self.train_dataset)
-        return self.train_data.next_batch()
+        return self.train_data.next_batch(self.alpha, self.phase)
+
+    def get_next_test_batch(self):
+        return self.test_data.next_batch(self.alpha, self.phase)
 
     def handle_stats(self,stats):
         e           = (self.sample_i / float(self.epoch_len))
@@ -198,7 +188,7 @@ class Session(nn.Module):
                 print('Start from iteration {}'.format(self.sample_i))
 
     def write_tests(self):
-        batch       = self.test_data.next_batch()
+        batch       = self.get_next_test_batch()
         out_ims     = self.model.dry_run(batch, self.phase, self.alpha)
 
         sample_dir  = '{}/recon'.format(args.save_dir)
@@ -210,6 +200,22 @@ class Session(nn.Module):
 
 
 ########### JUNK ############################
+
+# from    model import Generator, Encoder, Critic
+# from    torch import nn, optim
+# import  data
+# from    torch.autograd import Variable #, grad
+
+#max(self.phase * args.images_per_stage, args.step_offset)
+
+        # if args.step_offset != 0:
+        #     if args.step_offset == -1:
+        #         args.step_offset = self.sample_i
+        #     print("Step offset is {}".format(args.step_offset))
+        #     self.phase += args.phase_offset
+        #     self.alpha = 0.0
+        #     self.kt    = 0.0
+
         # nsamples = args.test_cols * args.test_rows
         # self.test_data.init_epoch(nsamples, self.alpha, self.cur_res(), self.phase)
         # self.test_data.stop_batches()
