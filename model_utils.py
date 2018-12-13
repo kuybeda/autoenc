@@ -95,9 +95,9 @@ class Generator(nn.Module):
                 # use bilinear tranform here to match the bilinear interpolation in the input data
                 skipout     = F.interpolate(skipout, scale_factor=2, mode='bilinear', align_corners=False)
                 if i == step:
-                    skipout = (1 - 0.5*alpha) * skipgray + 0.5*alpha * skipout
+                    skipout = (1 - 0.5*alpha) * skipout + 0.5*alpha * skipgray
                 else:
-                    skipout = 0.5*(skipout + skipgray)
+                    skipout = 0.5*(skipgray + skipout)
             else:
                 out     = conv(out)
                 skipout = to_gray(self.nonlin(out))
