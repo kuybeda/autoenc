@@ -80,25 +80,39 @@ class Generator(nn.Module):
 
             if i > 0 and step > 0:
                 up_input = out
-                upsample = F.interpolate(up_input, scale_factor=2, mode='nearest')
-                # upsample = F.interpolate(out, scale_factor=2, mode='bilinear', align_corners=False)
-                incat = torch.cat((upsample,shorts[-i]),dim=1) if shorts is not None else upsample
-                out = conv(incat)
+                upsample    = F.interpolate(up_input, scale_factor=2, mode='nearest')
+
+                # make side branch for graylevel pyramid
+                # upgray      = F.interpolate(up_input, scale_factor=2, mode='bilinear', align_corners=False)
+                # skip_gray   = self.to_gray[i - 1](self.nonlin(upgray))
+
+                incat       = torch.cat((upsample,shorts[-i]),dim=1) if shorts is not None else upsample
+                out         = conv(incat)
+
+                # make grayscale resnet link
+                # skipout     = to_gray(self.nonlin(out))
+                skipgray    = to_gray(self.nonlin(out))
+                # use bilinear tranform here to match the bilinear interpolation in the input data
+                skipout     = F.interpolate(skipout, scale_factor=2, mode='bilinear', align_corners=False)
+                if i == step:
+                    skipout = (1 - 0.5*alpha) * skipgray + 0.5*alpha * skipout
+                else:
+                    skipout = 0.5*(skipout + skipgray)
             else:
-                out = conv(out)
+                out     = conv(out)
+                skipout = to_gray(self.nonlin(out))
 
             if i == step: # The final layer is ALWAYS either to_rgb layer, or a mixture of 2 to-rgb_layers!
-                out = self.nonlin(out)
-                out = to_gray(out)
-
-                if i > 0 and 0 <= alpha < 1:
-                    # use bilinear tranform here to match the bilinear interpolation in the input data
-                    upsample    = F.interpolate(up_input, scale_factor=2, mode='bilinear', align_corners=False)
-                    upsample    = self.nonlin(upsample)
-                    skip_gray   = self.to_gray[i - 1](upsample)
-                    out         = (1 - alpha) * skip_gray + alpha * out
+                # out = self.nonlin(out)
+                # out = to_gray(out)
+                # if i > 0 and 0 <= alpha < 1:
+                #     # use bilinear tranform here to match the bilinear interpolation in the input data
+                #     upsample    = F.interpolate(up_input, scale_factor=2, mode='bilinear', align_corners=False)
+                #     upsample    = self.nonlin(upsample)
+                #     skip_gray   = self.to_gray[i - 1](upsample)
+                #     out         = (1 - alpha) * skip_gray + alpha * out
                 break
-        return out
+        return skipout
 
 class Bottleneck(nn.Module):
     def __init__(self, nz, in_channels, pixel_norm, spectral_norm, make_shortcuts=False):
@@ -151,22 +165,26 @@ class Bottleneck(nn.Module):
 
             if i == phase:
                 # first convolution that converts image to features
-                out = self.from_gray[index](input)
+                out  = self.from_gray[index](input)
+                skipin = input
 
             out = self.progression[index](out)
             if i == 0:
                 # append narrow blocks here
                 out = self.narrowblocks(out)
-                # pass
             else:
                 # update shortcuts
                 shorts.append(out)
                 out = F.avg_pool2d(out, 2)
+
                 # implement smooth scale transition
-                if i == phase and 0 <= alpha < 1:
-                    skip    = F.avg_pool2d(input, 2)
-                    skip    = self.from_gray[index + 1](skip)
-                    out     = (1 - alpha) * skip + alpha * out
+                # if i == phase and 0 <= alpha < 1:
+                skipin  = F.avg_pool2d(skipin, 2)
+                skip    = self.from_gray[index + 1](skipin)
+                if i==phase:
+                    out = (1 - 0.5*alpha) * skip + 0.5*alpha * out
+                else:
+                    out = 0.5*(skip + out)
 
         if self.make_shortcuts:
             return out, shorts

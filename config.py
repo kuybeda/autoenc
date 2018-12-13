@@ -24,10 +24,10 @@ def parse_args():
     ################################################################
     parser.add_argument('--EGlr', type=float, default=0.001, help='Autoencoder learning rate')
     parser.add_argument('--Clr', type=float, default=0.001, help='Critic learning rate')
-    parser.add_argument('--weight_decay', type=float, default=1e-5, help='Optimizer weight decay')
+    parser.add_argument('--weight_decay', type=float, default=1e-4, help='Optimizer weight decay')
 
-    parser.add_argument('--images_per_stage', type=int, default=2e5)
-    parser.add_argument('--checkpoint_cycle', type=int, default=200)
+    parser.add_argument('--images_per_stage', type=int, default=1e5)
+    parser.add_argument('--checkpoint_cycle', type=int, default=100)
     #################################################################
 
     parser.add_argument('--modelmodule', default='', help='A module file with Model implementation')
@@ -61,7 +61,7 @@ def init():
     global args
 
     # number of bottleneck features
-    args.nz             = 128
+    args.nz             = 64
     # number of bottleneck features for style variations
     args.style_channels = 2
     args.start_res      = 8

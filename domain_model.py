@@ -72,10 +72,13 @@ class MixCoder(object):
         # zerr         = z1_struct - z2_struct
         return torch.cat((z1_style,z2_struct),dim=1), z1_struct, z2_struct
 
-    def __call__(self, x1, phase, alpha):
+    def __call__(self, x1, x2, phase, alpha):
         z1,short1 = self.enc1(x1, phase, alpha)
         # combine with random style input
-        z2      = self.rand_combine(z1)
+        # z2      = self.rand_combine(z1)
+        z2,_      = self.enc2(x2, phase, alpha)
+        z2,_,_    = self.cross_combine(z2,z1)
+
         x2_hat  = self.gen2(z2, phase, alpha, short1)
         z2_hat,short2_hat = self.enc2(x2_hat, phase, alpha)
         # make a style shortcut from z1 to z1_hat
@@ -126,7 +129,7 @@ class Model(OptimModule):
 
     @staticmethod
     def mix_loss(mixcod, crt1, crt2, x1, x2, phase, alpha):
-        x1_x2, x1_x1, z1_struct, z1_hat_struct = mixcod(x1, phase, alpha)
+        x1_x2, x1_x1, z1_struct, z1_hat_struct = mixcod(x1, x2, phase, alpha)
         loss_x    = utils.mismatch(x1_x1, x1, args.match_x_metric)
         loss_z    = utils.mismatch(z1_struct, z1_hat_struct, args.match_z_metric)
 
@@ -169,13 +172,14 @@ class Model(OptimModule):
         return grad_norm
 
     @staticmethod
-    def mixcod_grad_norm(mixcod, x, phase, alpha):
-        x_hat        = Variable(x, requires_grad=True)
-        _,fake_x_hat, z1_struct, z1_hat_struct = mixcod(x_hat, phase, alpha)
-        err_x_hat   = utils.mismatch(fake_x_hat, x_hat, args.match_x_metric)
+    def mixcod_grad_norm(mixcod, x1, x2, phase, alpha):
+        x1_hat      = Variable(x1, requires_grad=True)
+        # x2_hat      = Variable(x2, requires_grad=True)
+        _,fake_x1_hat, z1_struct, z1_hat_struct = mixcod(x1_hat,x2,phase, alpha)
+        err_x_hat   = utils.mismatch(fake_x1_hat, x1_hat, args.match_x_metric)
         err_z_hat   = utils.mismatch(z1_struct, z1_hat_struct, args.match_z_metric)
         loss = err_x_hat.sum() + err_z_hat.sum()
-        grad_x_hat  = grad(outputs=loss, inputs=x_hat, create_graph=True)[0]
+        grad_x_hat  = grad(outputs=loss, inputs=x1_hat, create_graph=True)[0]
         grad_norm   = grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1)
         return grad_norm
 
@@ -274,12 +278,12 @@ class Model(OptimModule):
         losses += loss_grad_auto_fir
 
         # measure gradient of mixcoder
-        gnorm_mix_rgb     = Model.mixcod_grad_norm(self.mixcod.rgb, rgb, phase, alpha).mean()
+        gnorm_mix_rgb     = Model.mixcod_grad_norm(self.mixcod.rgb, rgb, fir, phase, alpha).mean()
         loss_grad_mix_rgb = Model.crt_grad_penalty(self.crt.rgb, rgb, mix_fake_rgb, phase, alpha, args.grad_norm_fact*gnorm_mix_rgb)
         stats.update({'loss_grad_mix_rgb':loss_grad_mix_rgb[0]})
         losses += loss_grad_mix_rgb
 
-        gnorm_mix_fir     = Model.mixcod_grad_norm(self.mixcod.fir, fir, phase, alpha).mean()
+        gnorm_mix_fir     = Model.mixcod_grad_norm(self.mixcod.fir, fir, rgb, phase, alpha).mean()
         loss_grad_mix_fir = Model.crt_grad_penalty(self.crt.fir, fir, mix_fake_fir, phase, alpha, args.grad_norm_fact*gnorm_mix_fir)
         stats.update({'loss_grad_mix_fir':loss_grad_mix_fir[0]})
         losses += loss_grad_mix_fir
@@ -306,8 +310,8 @@ class Model(OptimModule):
         rgb,fir    = batch
         batch_size = rgb.shape[0]
 
-        rgb_fir, rgb_rgb, _, _ = self.mixcod.rgb(rgb,phase,alpha)
-        fir_rgb, fir_fir, _, _ = self.mixcod.fir(fir,phase,alpha)
+        rgb_fir, rgb_rgb, _, _ = self.mixcod.rgb(rgb,fir, phase,alpha)
+        fir_rgb, fir_fir, _, _ = self.mixcod.fir(fir,rgb, phase,alpha)
 
         # join source and reconstructed images side by side
         out_ims    = torch.cat((rgb,rgb_rgb,rgb_fir,fir,fir_fir,fir_rgb), 1).view(6*batch_size,1,rgb.shape[-2],rgb.shape[-1])
