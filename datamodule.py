@@ -8,9 +8,6 @@ class DataWrapper(object):
         self.epoch_iterator = None
         self.batch_size     = 0
 
-    def reset_epoch(self, *arg, **kwargs):
-        assert(0)
-
     def next_batch(self, *args, **kwargs):
         try:
             batch = next(self.epoch_iterator)
@@ -33,8 +30,8 @@ class DataWrapper(object):
         self.epoch_iterator = self.reset_epoch(*self.epoch_args)
 
     ##### Virtual functions #####
-    def epoch_len(self):
-        assert(0)
+    # def epoch_len(self):
+    #     assert(0)
 
     def reset_epoch(self, *args):
         assert(0)

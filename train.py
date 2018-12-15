@@ -3,6 +3,7 @@ import  config
 import  utils
 import  evaluate
 from    session import Session
+from    myplotlib import show_planes,imshow,clf
 
 import  torch.backends.cudnn as cudnn
 cudnn.benchmark = True
@@ -29,9 +30,8 @@ def train(session):
         session.save_checkpoint()
 
         # write test images
-        if (session.batch_count % 100 == 0):
-            session.write_tests()
-        # evaluate.tests_run(session, reconstruction = (session.batch_count % 100 == 0))
+        # if (session.batch_count % 100 == 0):
+        #     session.write_tests()
 
     session.finish()
 

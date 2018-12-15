@@ -1,4 +1,4 @@
-from    model_utils import Generator, Encoder, Critic, OptimModule
+from    model_utils import Generator, Encoder, Critic, OptimModule, real_fake_loss, crt_loss_balanced
 import  config
 import  torch
 from    torch import nn,optim
@@ -114,9 +114,9 @@ class Model(OptimModule):
         self.optimG = optim.Adamax(self.gen.parameters(), args.EGlr, betas=(0, 0.99), weight_decay=args.weight_decay)
         self.optimC = optim.Adamax(self.crt.parameters(), args.Clr,  betas=(0, 0.99), weight_decay=args.weight_decay)
 
-    @staticmethod
-    def real_fake_loss(crt_real, crt_fake):
-        return -(crt_fake * (crt_real.detach() > crt_fake.detach()).float()).mean()
+    # @staticmethod
+    # def real_fake_loss(crt_real, crt_fake):
+    #     return -(crt_fake * (crt_real.detach() > crt_fake.detach()).float()).mean()
 
     @staticmethod
     def autoenc_loss(autoenc, crt, x, phase, alpha):
@@ -124,7 +124,7 @@ class Model(OptimModule):
         loss_x   = utils.mismatch(x_fake, x, args.match_x_metric)
         crt_real = crt(x, x, phase, alpha)
         crt_fake = crt(x_fake, x, phase, alpha)
-        loss_crt = Model.real_fake_loss(crt_real,crt_fake)
+        loss_crt = real_fake_loss(crt_real,crt_fake)
         return [args.autoenc_weight*loss_x, alpha*args.autoenc_weight**loss_crt], x_fake.detach()
 
     @staticmethod
@@ -136,16 +136,16 @@ class Model(OptimModule):
         # compare cyclic x1 reconstruction with original x1
         crt1_real = crt1(x1, x1, phase, alpha)
         crt1_fake = crt1(x1_x1, x1, phase, alpha)
-        loss_crt1 = Model.real_fake_loss(crt1_real,crt1_fake)
+        loss_crt1 = real_fake_loss(crt1_real,crt1_fake)
         # compare fake x1 translation with real x2
         crt2_real = crt2(x2, x2, phase, alpha)
         crt2_fake = crt2(x1_x2, x1_x2, phase, alpha)
-        loss_crt2 = Model.real_fake_loss(crt2_real,crt2_fake)
+        loss_crt2 = real_fake_loss(crt2_real,crt2_fake)
         return [loss_x, loss_z, alpha*loss_crt1, alpha*loss_crt2], x1_x1.detach(), x1_x2.detach()
 
-    @staticmethod
-    def crt_loss_balanced(cr,cf):
-        return cf - cr + torch.abs(cf + cr)
+    # @staticmethod
+    # def crt_loss_balanced(cr,cf):
+    #     return cf - cr + torch.abs(cf + cr)
 
     @staticmethod
     def crt_loss_same_domain(crt, x, x_auto_fake, x_mix_fake, phase, alpha):
@@ -153,14 +153,14 @@ class Model(OptimModule):
         crt_auto_fake   = crt(x_auto_fake, x, phase, alpha)
         crt_mix_fake    = crt(x_mix_fake, x, phase, alpha)
         cfa, cfm, cr    = crt_auto_fake.mean(), crt_mix_fake.mean(), crt_real.mean()
-        return [args.autoenc_weight*Model.crt_loss_balanced(cr,cfa),
-                args.autoenc_weight*Model.crt_loss_balanced(cr,cfm)], cr, cfa, cfm,
+        return [args.autoenc_weight*crt_loss_balanced(cr,cfa),
+                args.autoenc_weight*crt_loss_balanced(cr,cfm)], cr, cfa, cfm,
 
     @staticmethod
     def crt_loss_cross_domain(crt, cr, x_fake, phase, alpha):
         crt_fake    = crt(x_fake, x_fake, phase, alpha)
         cf          = crt_fake.mean()
-        return [Model.crt_loss_balanced(cr,cf)], cf
+        return [crt_loss_balanced(cr,cf)], cf
 
     @staticmethod
     def autoenc_grad_norm(autoenc, x, phase, alpha):
@@ -193,6 +193,19 @@ class Model(OptimModule):
         # Push the gradients of the interpolated samples towards 1
         loss_grad   = ((grad_x_hat.view(grad_x_hat.size(0), -1).norm(2, dim=1) - grad_norm) ** 2).mean()
         return [args.grad_weight*loss_grad]
+
+    def batch_size(reso):
+        if args.gpu_count == 1:
+            batch_table = {4: 512, 8: 256, 16: 96, 32: 32, 64: 8, 128: 16, 256: 8, 512: 4, 1024: 1}
+        elif args.gpu_count == 2:
+            batch_table = {4: 256, 8: 256, 16: 256, 32: 128, 64: 64, 128: 32, 256: 16, 512: 8, 1024: 2}
+        elif args.gpu_count == 4:
+            batch_table = {4: 512, 8: 256, 16: 128, 32: 64, 64: 32, 128: 32, 256: 32, 512: 16, 1024: 4}
+        elif args.gpu_count == 8:
+            batch_table = {4: 512, 8: 512, 16: 512, 32: 256, 64: 256, 128: 128, 256: 64, 512: 32, 1024: 8}
+        else:
+            assert (False)
+        return batch_table[reso]
 
     def update(self, batch, phase, alpha):
         ##### Train Encoder and Generator #########
@@ -295,9 +308,9 @@ class Model(OptimModule):
 
         return stats
 
-    def pbar_description(self,stats,batch,batch_count,sample_i,phase,alpha,res,epoch):
-        return ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; E: {6:.2f}; L1_mix_fir {7:.4f}; L1_mix_rgb {8:.4f}:').format(\
-                batch_count+1, sample_i+1, phase, batch, alpha, res, epoch,
+    def pbar_description(self,stats,batch,batch_count,sample_i,phase,alpha,res):
+        return ('{0}; it: {1}; phase: {2}; batch: {3:.1f}; Alpha: {4:.3f}; Reso: {5}; L1_mix_fir {6:.4f}; L1_mix_rgb {7:.4f}:').format(\
+                batch_count+1, sample_i+1, phase, batch, alpha, res,
                 stats['L1_mix_fir'], stats['L1_mix_rgb'])
 
     def dry_run(self, batch, phase, alpha):

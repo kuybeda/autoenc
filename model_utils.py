@@ -3,7 +3,13 @@ from    torch import nn
 from    torch.nn import functional as F
 from    cnnutils import EqualConv2d, DenseBlock, SpectralNormConv2d
 from    torch.optim import Optimizer
-# from    torch.autograd import Variable, grad
+from    torch.autograd import Variable, grad
+
+def real_fake_loss(crt_real, crt_fake):
+    return -(crt_fake * (crt_real.detach() > crt_fake.detach()).float()).mean()
+
+def crt_loss_balanced(cr,cf):
+    return cf - cr + torch.abs(cf + cr)
 
 class OptimModule(nn.Module):
     ''' Module that returns and loads dictionary of all optimizers'''
@@ -90,7 +96,6 @@ class Generator(nn.Module):
                 out         = conv(incat)
 
                 # make grayscale resnet link
-                # skipout     = to_gray(self.nonlin(out))
                 skipgray    = to_gray(self.nonlin(out))
                 # use bilinear tranform here to match the bilinear interpolation in the input data
                 skipout     = F.interpolate(skipout, scale_factor=2, mode='bilinear', align_corners=False)
@@ -115,7 +120,7 @@ class Generator(nn.Module):
         return skipout
 
 class Bottleneck(nn.Module):
-    def __init__(self, nz, in_channels, pixel_norm, spectral_norm, make_shortcuts=False):
+    def __init__(self, nz, in_channels, pixel_norm, spectral_norm, max_layer=6, make_shortcuts=False):
         super().__init__()
         self.make_shortcuts = make_shortcuts
         mxgrow = nz//N_DENSE_BLOCKS
@@ -156,7 +161,7 @@ class Bottleneck(nn.Module):
                                             EqualConv2d(in_channels, nz, 1, 1),
                                             EqualConv2d(in_channels, nz, 1, 1)])
 
-        self.n_layer = len(self.progression)
+        self.n_layer = max_layer #len(self.progression)
 
     def forward(self, pool, input, phase, alpha):
         shorts = []
@@ -200,8 +205,8 @@ class Encoder(Bottleneck):
         return out
 
 class Critic(Bottleneck):
-    def __init__(self, nz, pixel_norm=False, spectral_norm=True):
-        super().__init__(nz, 2, pixel_norm, spectral_norm)
+    def __init__(self, n_in, nz, pixel_norm=False, spectral_norm=True):
+        super().__init__(nz, n_in, pixel_norm, spectral_norm)
         self.classifier  = nn.Sequential(nn.LeakyReLU(0.2),
                                          SpectralNormConv2d(nz, nz, 3),
                                          nn.LeakyReLU(0.2),
@@ -210,9 +215,9 @@ class Critic(Bottleneck):
                                          nn.AdaptiveAvgPool2d(1),
                                          SpectralNormConv2d(nz, 1, 1,bias=False))
 
-    def forward(self, input1, input2, step, alpha):
+    def forward(self, input, step, alpha):
         # input = input1
-        input = torch.cat((input1,input2),dim=1)
+        # input = torch.cat((input1,input2),dim=1)
         out   = super().forward(F.avg_pool2d, input, step, alpha)
         # return torch.sigmoid(self.classifier(out)).squeeze(2).squeeze(2)
         return self.classifier(out).squeeze(2).squeeze(2)

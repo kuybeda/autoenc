@@ -11,20 +11,6 @@ import  torchvision.utils
 
 args   = config.get_config()
 
-def batch_size(reso):
-    if args.gpu_count == 1:
-        batch_table = {4: 512, 8: 256, 16: 96, 32: 32, 64: 8, 128: 16, 256: 8, 512: 4, 1024: 1}
-    elif args.gpu_count == 2:
-        batch_table = {4: 256, 8: 256, 16: 256, 32: 128, 64: 64, 128: 32, 256: 16, 512: 8, 1024: 2}
-    elif args.gpu_count == 4:
-        batch_table = {4: 512, 8: 256, 16: 128, 32: 64, 64: 32, 128: 32, 256: 32, 512: 16, 1024: 4}
-    elif args.gpu_count == 8:
-        batch_table = {4: 512, 8: 512, 16: 512, 32: 256, 64: 256, 128: 128, 256: 64, 512: 32, 1024: 8}
-    else:
-        assert (False)
-
-    return batch_table[reso]
-
 class Session(nn.Module):
 
     def __init__(self):
@@ -58,14 +44,14 @@ class Session(nn.Module):
         # import a custom data loader
         Datawrapper      = getattr(__import__(args.datamodule, fromlist=[None]),args.datawrapper)
         self.train_data  = Datawrapper(args.train_path)
-        self.epoch_len   = self.train_data.epoch_len()
+        # self.epoch_len   = self.train_data.epoch_len()
         self.test_data   = Datawrapper(args.test_path)
 
     def cur_res(self):
         return  args.start_res * 2 ** self.phase
 
     def cur_batch(self):
-        return batch_size(self.cur_res())
+        return self.model.batch_size(self.cur_res())
 
     def init_stats(self):
         if args.use_TB:
@@ -115,10 +101,10 @@ class Session(nn.Module):
         return self.test_data.next_batch(self.alpha, self.phase)
 
     def handle_stats(self,stats):
-        e           = (self.sample_i / float(self.epoch_len))
+        # e           = (self.sample_i / float(self.epoch_len)/self.cur_batch())
         batch       = self.cur_batch()
         pbar_description = self.model.pbar_description(stats, batch, self.batch_count, self.sample_i,
-                                                        self.phase, self.alpha, self.cur_res(),e)
+                                                        self.phase, self.alpha, self.cur_res())
         self.pbar.set_description(pbar_description)
         self.pbar.update(batch)
         # Write data to Tensorboard #

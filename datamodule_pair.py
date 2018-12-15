@@ -108,9 +108,9 @@ class PairDataWrapper(DataWrapper):
             return [mix_batch(b, tprev, alpha) for b in batch]
 
     #### implementation of abstract functions
-    def epoch_len(self):
-        loaders = self.loaders(1,4)
-        return min(len(loaders['RGB'].dataset),len(loaders['FIR'].dataset))
+    # def epoch_len(self):
+    #     loaders = self.loaders(1,4)
+    #     return min(len(loaders['RGB'].dataset),len(loaders['FIR'].dataset))
 
 ############ JUNK ################################
 # transforms.functional.to_grayscale,
