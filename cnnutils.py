@@ -4,8 +4,13 @@ from    math import sqrt
 # import  config
 from    torch.nn import init
 from    torch.autograd import Variable, grad
+import  numpy as np
 # import  utils
 # args   = config.get_config()
+
+def requires_grad(model, flag=True):
+    for p in model.parameters():
+        p.requires_grad = flag
 
 class SpectralNorm:
     def __init__(self, name):
@@ -18,7 +23,7 @@ class SpectralNorm:
         weight_mat = weight.contiguous().view(size[0], -1)
         if weight_mat.is_cuda:
             # u = u.cuda(async=(args.gpu_count>1))
-            u = u.cuda(non_blocking=True)
+            u = u.cuda()
         v = weight_mat.t() @ u
         v = v / v.norm()
         u = weight_mat @ v
@@ -93,18 +98,20 @@ class PixelNorm(nn.Module):
         return input / torch.sqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
 
 class SpectralNormConv2d(nn.Module):
-    def __init__(self, *args, bias=True, **kwargs):
+    def __init__(self, *args, const_weight_init = False, bias=True, **kwargs):
         super().__init__()
         conv = nn.Conv2d(*args, bias=bias, **kwargs)
-        init.kaiming_normal_(conv.weight)
+        if const_weight_init:
+            init.constant_(conv.weight,1.0) #1.0/np.prod(conv.weight.shape[1:]
+        else:
+            init.kaiming_normal_(conv.weight)
         if bias:
             conv.bias.data.zero_()
         self.conv   = spectral_norm(conv)
-        # self.pnorm  = PixelNorm()
 
     def forward(self, input):
         out = self.conv(input)
-        return out #self.pnorm(out)
+        return out
 
 class EqualConv2d(nn.Module):
     def __init__(self, *args, bias=True, **kwargs):
@@ -120,7 +127,7 @@ class EqualConv2d(nn.Module):
         return self.conv(input)
 
 class Conv2dNorm(nn.Sequential):
-    def __init__(self, name, in_channels, out_channels, kernel_size, padding,
+    def __init__(self, name, in_channels, out_channels, kernel_size, padding=0,
                  pixel_norm=False, spectral_norm=False, bias = True, **kwargs):
         super().__init__()
         self.g_name = name
@@ -139,26 +146,28 @@ class Conv2dNorm(nn.Sequential):
         return super().forward(x)
 
 class DenseLayer(nn.Sequential):
-    def __init__(self, name, in_channels, growth_rate, pixel_norm=False, spectral_norm=False, bias = True, dilation=1):
+    def __init__(self, name, in_channels, growth_rate, pixel_norm=False,
+                 spectral_norm=False, bias = True, dilation=1, nonlin=nn.LeakyReLU(0.2), **kwargs):
         super().__init__()
         self.g_name = name
-        self.add_module('nonlin', nn.LeakyReLU(0.2))
+        self.add_module('nonlin', nonlin)
 
         self.add_module('conv', Conv2dNorm('',in_channels, growth_rate, 3, padding=dilation, bias=bias,
-                                            pixel_norm=pixel_norm, spectral_norm=spectral_norm, dilation=dilation))
+                                            pixel_norm=pixel_norm, spectral_norm=spectral_norm,
+                                           dilation=dilation, **kwargs))
 
     def forward(self, x):
         return super().forward(x)
 
 class DenseBlock(nn.Module):
     def __init__(self, name, in_channels, growth_rate, n_layers, fixed_channels=True, bias=True,
-                 pixel_norm=False, spectral_norm=False, dilations=[1]):
+                 pixel_norm=False, spectral_norm=False, dilations=[1], nonlin=nn.LeakyReLU(0.2), **kwargs):
         super().__init__()
         self.g_name = name
         self.fixed_channels = fixed_channels
         self.layers = nn.ModuleList([DenseLayer(name + 'denselayer_%d/' % i, in_channels + i*growth_rate, growth_rate,
                                                 bias=bias, pixel_norm=pixel_norm, spectral_norm=spectral_norm,
-                                                dilation=dilations[min(i,len(dilations)-1)]) \
+                                                dilation=dilations[min(i,len(dilations)-1)], nonlin=nonlin, **kwargs) \
                                      for i in range(n_layers)])
     def forward(self, x):
         if self.fixed_channels:
@@ -171,7 +180,7 @@ class DenseBlock(nn.Module):
                 new_features.append(out)
             return torch.cat(new_features,1)
         else:
-            assert(0)
+            # assert(0)
             # here the number of channels grows int + nblocks*growth_rate
             for layer in self.layers:
                 out = layer(x)

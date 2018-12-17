@@ -11,9 +11,9 @@ def switch_grad_updates_to_first_of(a,b):
     requires_grad(a, True)
     requires_grad(b, False)
 
-def requires_grad(model, flag=True):
-    for p in model.parameters():
-        p.requires_grad = flag
+# def requires_grad(model, flag=True):
+#     for p in model.parameters():
+#         p.requires_grad = flag
 
 def split_labels_out_of_latent(z):
     label = torch.unsqueeze(z[:, -args.n_label], dim=1)
