@@ -6,7 +6,6 @@ from    torch.nn import init
 from    torch.autograd import Variable, grad
 import  numpy as np
 # import  utils
-# args   = config.get_config()
 
 def requires_grad(model, flag=True):
     for p in model.parameters():
@@ -97,27 +96,27 @@ class PixelNorm(nn.Module):
         # (input.norm(2, dim=1, keepdim=True) + 1e-8)  #
         return input / torch.sqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
 
-class SpectralNormConv2d(nn.Module):
-    def __init__(self, *args, const_weight_init = False, bias=True, **kwargs):
+class SpectralNormConv(nn.Module):
+    def __init__(self, *args, bias=True, conv=nn.Conv2d, **kwargs):
         super().__init__()
-        conv = nn.Conv2d(*args, bias=bias, **kwargs)
-        if const_weight_init:
-            init.constant_(conv.weight,1.0) #1.0/np.prod(conv.weight.shape[1:]
-        else:
-            init.kaiming_normal_(conv.weight)
+        convfun = conv(*args, bias=bias, **kwargs)
+        # if const_weight_init:
+        #     init.constant_(convfun.weight,1.0) #1.0/np.prod(conv.weight.shape[1:]
+        # else:
+        init.kaiming_normal_(convfun.weight)
         if bias:
-            conv.bias.data.zero_()
-        self.conv   = spectral_norm(conv)
+            convfun.bias.data.zero_()
+        self.conv   = spectral_norm(convfun)
 
     def forward(self, input):
         out = self.conv(input)
         return out
 
-class EqualConv2d(nn.Module):
-    def __init__(self, *args, bias=True, **kwargs):
+class EqualConv(nn.Module):
+    def __init__(self, *args, bias=True, conv=nn.Conv2d, **kwargs):
         super().__init__()
 
-        conv = nn.Conv2d(*args, **kwargs)
+        conv = conv(*args, **kwargs)
         conv.weight.data.normal_()
         if bias:
             conv.bias.data.zero_()
@@ -126,17 +125,17 @@ class EqualConv2d(nn.Module):
     def forward(self, input):
         return self.conv(input)
 
-class Conv2dNorm(nn.Sequential):
+class ConvNorm(nn.Sequential):
     def __init__(self, name, in_channels, out_channels, kernel_size, padding=0,
                  pixel_norm=False, spectral_norm=False, bias = True, **kwargs):
         super().__init__()
         self.g_name = name
         if spectral_norm:
-            self.add_module('conv', SpectralNormConv2d(in_channels, out_channels,
+            self.add_module('conv', SpectralNormConv(in_channels, out_channels,
                                                        kernel_size=kernel_size,
                                                        padding=padding, bias=bias, **kwargs))
         else:
-            self.add_module('conv', EqualConv2d(in_channels, out_channels,
+            self.add_module('conv', EqualConv(in_channels, out_channels,
                                                 kernel_size=kernel_size,
                                                 padding=padding, bias=bias, **kwargs))
         if pixel_norm:
@@ -147,15 +146,13 @@ class Conv2dNorm(nn.Sequential):
 
 class DenseLayer(nn.Sequential):
     def __init__(self, name, in_channels, growth_rate, pixel_norm=False,
-                 spectral_norm=False, bias = True, dilation=1, nonlin=nn.LeakyReLU(0.2), **kwargs):
+                 spectral_norm=False, bias = True, dilation=1, nonlin=nn.LeakyReLU(0.2),**kwargs):
         super().__init__()
         self.g_name = name
         self.add_module('nonlin', nonlin)
-
-        self.add_module('conv', Conv2dNorm('',in_channels, growth_rate, 3, padding=dilation, bias=bias,
+        self.add_module('conv', ConvNorm('',in_channels, growth_rate, 3, padding=dilation, bias=bias,
                                             pixel_norm=pixel_norm, spectral_norm=spectral_norm,
                                            dilation=dilation, **kwargs))
-
     def forward(self, x):
         return super().forward(x)
 
