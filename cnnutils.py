@@ -1,11 +1,11 @@
 import  torch
 from    torch import nn
 from    math import sqrt
-# import  config
 from    torch.nn import init
 from    torch.autograd import Variable, grad
 import  numpy as np
 # import  utils
+# import  config
 
 def requires_grad(model, flag=True):
     for p in model.parameters():
@@ -146,13 +146,16 @@ class ConvNorm(nn.Sequential):
 
 class DenseLayer(nn.Sequential):
     def __init__(self, name, in_channels, growth_rate, pixel_norm=False,
-                 spectral_norm=False, bias = True, dilation=1, nonlin=nn.LeakyReLU(0.2),**kwargs):
+                 spectral_norm=False, bias = True, dilation=1,
+                 nonlin=nn.LeakyReLU(0.2), batchnorm=False,**kwargs):
         super().__init__()
         self.g_name = name
+        if batchnorm:
+            self.add_module('batchnorm', nn.BatchNorm2d(in_channels)),
         self.add_module('nonlin', nonlin)
         self.add_module('conv', ConvNorm('',in_channels, growth_rate, 3, padding=dilation, bias=bias,
-                                            pixel_norm=pixel_norm, spectral_norm=spectral_norm,
-                                           dilation=dilation, **kwargs))
+                                         pixel_norm=pixel_norm, spectral_norm=spectral_norm,
+                                         dilation=dilation, **kwargs))
     def forward(self, x):
         return super().forward(x)
 

@@ -4,7 +4,6 @@ class DataWrapper(object):
     def __init__(self, datapath):
         super().__init__()
         self.datapath       = datapath
-        # self.gpucount       = gpucount
         self.epoch_iterator = None
         self.batch_size     = 0
 
@@ -30,13 +29,16 @@ class DataWrapper(object):
         self.epoch_iterator = self.reset_epoch(*self.epoch_args)
 
     ##### Virtual functions #####
-    # def epoch_len(self):
-    #     assert(0)
 
     def reset_epoch(self, *args):
         assert(0)
 
 ########## JUNK ##############
+
+    # self.gpucount       = gpucount
+
+    # def epoch_len(self):
+    #     assert(0)
 
     # def stop_batches(self):
     #     del self.epoch_iterator

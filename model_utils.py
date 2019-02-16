@@ -3,7 +3,7 @@ from    torch import nn
 from    torch.nn import functional as F
 from    cnnutils import EqualConv, ConvNorm, DenseBlock, SpectralNormConv
 from    torch.optim import Optimizer
-from    torch.autograd import Variable, grad
+# from    torch.autograd import Variable, grad
 
 def real_fake_loss(crt_real, crt_fake):
     return -(crt_fake * (crt_real.detach() > crt_fake.detach()).float()).mean()
